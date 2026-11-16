@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1
+# 能力镜像：在平台镜像之上预装 Agent CLI（opencode / codex / dsh，可选 Hermes），
+# 这样每次部署都自带执行器，不需要在宿主机装 CLI、也不依赖 compose.override 里的 AGENTFLOW_*_BIN。
+#
+# 用法：
+#   docker build -f deploy/Dockerfile.agent-clis \
+#     --build-arg BASE=<平台镜像> \
+#     --build-arg WITH_HERMES=1 \
+#     -t loopforge:clis .
+ARG BASE=swr.cn-north-4.myhuaweicloud.com/swr-hd-mig/loopforge:190d948-202611161657UTC
+FROM ${BASE}
+
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG OPENCODE_VERSION=1.19.5
+ARG CODEX_VERSION=0.169.0
+ARG DSH_VERSION=0.2.2-rc.1
+ARG WITH_HERMES=0
+
+USER root
+ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false
+
+# 三个 CLI 一起装：失败立即中止构建（缺任何一个都不该产出镜像）
+RUN set -eux; \
+    npm install -g --no-audit --no-fund \
+        "opencode-ai@${OPENCODE_VERSION}" \
+        "@openai/codex@${CODEX_VERSION}" \
+        "@deepseek-ai/dsh@${DSH_VERSION}"; \
+    npm cache clean --force 2>/dev/null || true; \
+    for b in opencode codex dsh; do \
+        command -v "$b" >/dev/null || { echo "FATAL: $b 未装上"; exit 1; }; \
+        echo "$b -> $(command -v "$b") $("$b" --version 2>&1 | head -1)"; \
+    done
+
+# 显式指向镜像内路径：即使 PATH 被改写，平台也能解析到
+ENV AGENTFLOW_OPENCODE_BIN=/usr/local/bin/opencode \
+    AGENTFLOW_CODEX_BIN=/usr/local/bin/codex \
+    AGENTFLOW_DSH_BIN=/usr/local/bin/dsh
+
+# Hermes 原生执行器：安装脚本把依赖环境提交在安装 home 内，所以固定 /opt/hermes-home，
+# 绝不使用宿主机 /root（P0 约束）。
+RUN if [ "${WITH_HERMES}" = "1" ]; then \
+        set -eux; \
+        mkdir -p /opt/hermes-home; \
+        HOME=/opt/hermes-home sh -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash'; \
+        test -x /opt/hermes-home/.hermes/bin/hermes || { echo "FATAL: hermes 未装上"; exit 1; }; \
+        HOME=/opt/hermes-home /opt/hermes-home/.hermes/bin/hermes --version; \
+    else \
+        echo "skip hermes (WITH_HERMES=0)"; \
+    fi
+
+ENV AGENTFLOW_HERMES_HOME=/opt/hermes-home \
+    AGENTFLOW_HERMES_BIN=/opt/hermes-home/.hermes/bin/hermes
+
+# 让 `docker run` 直接能看到版本，部署后可一条命令自检
+LABEL org.opencontainers.image.title="loopforge + agent CLIs" \
+      org.opencontainers.image.description="LoopForge platform with opencode/codex/dsh preinstalled"

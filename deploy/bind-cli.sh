@@ -17,6 +17,7 @@
 #   --download-url <URL>   从指定 URL 下载二进制（含 {os} {arch} 占位符）
 #   --source <目录>        平台未分发二进制时，从本地 AgentFlow 源码构建（需要 Go）
 #   --strict-https         禁止在 HTTPS 网络不可达时降级到 HTTP
+#   --sha256 <hex>         校验下载/指定的二进制（平台分发时默认从元数据取，校验失败即中止）
 #   --allow-http           允许降级到明文 HTTP（内网裸 IP 安装用；平台经 HTTPS
 #                          下发本脚本时默认就是禁止降级）
 #   --service              安装常驻服务。macOS 用 launchd；Linux 有 systemd 时用用户服务，
@@ -44,6 +45,7 @@ INSTALL_SERVICE=0
 NO_START=0
 UNINSTALL=0
 UPGRADE=0
+EXPECTED_SHA256=""
 # 平台从 HTTPS 请求下发本脚本时会把下面这一行改成 STRICT_HTTPS=1（见
 # deploy/deploy.go）。内网裸 IP 走 HTTP 下发时保持 0；显式开关是
 # --strict-https / --allow-http。
@@ -61,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --download-url) DOWNLOAD_URL="${2:-}"; shift 2 ;;
     --source) SOURCE_DIR="${2:-}"; shift 2 ;;
     --strict-https) STRICT_HTTPS=1; shift ;;
+    --sha256) EXPECTED_SHA256="${2:-}"; shift 2 ;;
     --allow-http) STRICT_HTTPS=0; shift ;;
     --service) INSTALL_SERVICE=1; shift ;;
     --no-start) NO_START=1; shift ;;
@@ -543,6 +546,42 @@ case "$(printf '%s' "${AGENTFLOW_BROWSER:-}" | tr '[:upper:]' '[:lower:]')" in
 esac
 
 # ---------- 1. 安装二进制 ----------
+# 下载产物的 sha256 由平台以 ?metadata=1 提供（{"sha256":"…"}）；自定义来源用 --sha256 指定。
+sha256_of() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$file" | sed 's/^.*= //'
+  else
+    return 1
+  fi
+}
+
+remote_sha256() {
+  curl -fsSL "$1" 2>/dev/null | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{64\}\)".*/\1/p' | head -1
+}
+
+verify_binary_sha256() {
+  local file="$1" expected="${2:-}" label="$3"
+  local actual
+  actual=$(sha256_of "$file" 2>/dev/null) || actual=""
+  if [[ -z "$actual" ]]; then
+    echo "[bind-cli] 警告: 本机没有 sha256 工具（sha256sum/shasum/openssl），${label} 未校验" >&2
+    return 0
+  fi
+  if [[ -z "$expected" ]]; then
+    echo "[bind-cli] 警告: 平台未提供 ${label} 的 sha256 元数据，已跳过完整性校验；可用 --sha256 手动指定" >&2
+    return 0
+  fi
+  if [[ "$(printf '%s' "$actual" | tr 'A-Z' 'a-z')" != "$(printf '%s' "$expected" | tr 'A-Z' 'a-z')" ]]; then
+    fail "${label} sha256 校验失败（期望 ${expected}，实际 ${actual}）；已中止安装"
+  fi
+  info "  ${label} sha256 校验通过"
+}
+
 install_binary() {
   mkdir -p "$BIN_DIR"
   TEMP_BINARY=$(mktemp "${BIN_DIR}/.agentflow-runner.XXXXXX")
@@ -558,7 +597,7 @@ install_binary() {
     # 默认：平台直接分发对应 OS/架构的二进制，无需本机 Go 工具链。
     info "从 ${SERVER} 下载 agentflow-runner（${OS}/${ARCH}）..."
     if curl -fsSL "${SERVER}/runners/agentflow-runner?os=${OS}&arch=${ARCH}" -o "$TEMP_BINARY"; then
-      :
+      [[ -n "$EXPECTED_SHA256" ]] || EXPECTED_SHA256=$(remote_sha256 "${SERVER}/runners/agentflow-runner?os=${OS}&arch=${ARCH}&metadata=1")
     else
       # 平台未配置分发：回退到本地源码构建（--source 或当前目录为源码 checkout）。
       AUTO_UPDATE=0
@@ -576,6 +615,7 @@ install_binary() {
     fi
   fi
   [[ -s "$TEMP_BINARY" ]] || fail "下载或构建的 runner 二进制为空"
+  verify_binary_sha256 "$TEMP_BINARY" "$EXPECTED_SHA256" "agentflow-runner"
   chmod +x "$TEMP_BINARY"
   mv -f "$TEMP_BINARY" "$BINARY"
   TEMP_BINARY=""
@@ -591,6 +631,7 @@ install_gate_binary() {
   target="${target//\{arch\}/$target_arch}"
   info "从 ${SERVER} 下载 Gate MCP（${target_os}/${target_arch}）..."
   if curl -fsSL "${SERVER}/runners/agentflow-gate-mcp?os=${target_os}&arch=${target_arch}" -o "$target"; then
+    verify_binary_sha256 "$target" "$(remote_sha256 "${SERVER}/runners/agentflow-gate-mcp?os=${target_os}&arch=${target_arch}&metadata=1")" "Gate MCP"
     chmod +x "$target"
     return
   fi

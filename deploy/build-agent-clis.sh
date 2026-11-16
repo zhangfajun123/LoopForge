@@ -12,7 +12,9 @@ NS="${NS:-swr-hd-mig}"
 BASE_IMAGE="${BASE_IMAGE:-$REG/$NS/loopforge:190d948-202611161657UTC}"
 WITH_HERMES="${WITH_HERMES:-0}"
 SHA=$(git rev-parse --short HEAD)
-TAG="clis-${SHA}-$(date -u +%Y%m%d%H%M)UTC"
+SUFFIX=""
+[[ "$WITH_HERMES" == "1" ]] && SUFFIX="-hermes"
+TAG="clis${SUFFIX}-${SHA}-$(date -u +%Y%m%d%H%M)UTC"
 LOCAL="loopforge:${TAG}"
 REMOTE="${REG}/${NS}/loopforge:${TAG}"
 ALIAS="${REG}/${NS}/loopforge:clis"
@@ -29,7 +31,7 @@ docker build -f deploy/Dockerfile.agent-clis \
 echo "--- 自检（镜像内 CLI 版本）---"
 docker run --rm --entrypoint sh "$LOCAL" -c '
   for b in opencode codex dsh; do printf "%s: " "$b"; command -v "$b" >/dev/null && "$b" --version 2>&1 | head -1 || echo MISSING; done
-  printf "hermes: "; [ -x "${AGENTFLOW_HERMES_BIN:-/nonexistent}" ] && "$AGENTFLOW_HERMES_BIN" --version 2>&1 | head -1 || echo "not baked"
+  printf "hermes: "; if [ -x "${AGENTFLOW_HERMES_BIN:-/nonexistent}" ]; then HERMES_HOME="${AGENTFLOW_HERMES_HOME}" "$AGENTFLOW_HERMES_BIN" --version 2>&1 | head -1; else echo "not baked"; fi
   echo "env: AGENTFLOW_OPENCODE_BIN=$AGENTFLOW_OPENCODE_BIN"
 ' || echo "自检失败（镜像仍已构建，请人工核查）"
 

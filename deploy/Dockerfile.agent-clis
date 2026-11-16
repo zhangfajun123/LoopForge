@@ -40,19 +40,26 @@ ENV AGENTFLOW_OPENCODE_BIN=/usr/local/bin/opencode \
     AGENTFLOW_DSH_BIN=/usr/local/bin/dsh
 
 # Hermes 原生执行器：安装脚本把依赖环境提交在安装 home 内，所以固定 /opt/hermes-home，
-# 绝不使用宿主机 /root（P0 约束）。
+# 绝不使用宿主机 /root（P0 约束）。安装器把命令放到 ~/.local/bin，用符号链接固化成 /usr/local/bin/hermes。
 RUN if [ "${WITH_HERMES}" = "1" ]; then \
         set -eux; \
+        apt-get update; \
+        apt-get install -y --no-install-recommends libxi6 libxtst6 libx11-6 libxext6; \
+        rm -rf /var/lib/apt/lists/*; \
         mkdir -p /opt/hermes-home; \
         HOME=/opt/hermes-home sh -c 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash'; \
-        test -x /opt/hermes-home/.hermes/bin/hermes || { echo "FATAL: hermes 未装上"; exit 1; }; \
-        HOME=/opt/hermes-home /opt/hermes-home/.hermes/bin/hermes --version; \
+        HB="$(HOME=/opt/hermes-home bash -lc 'command -v hermes' || true)"; \
+        test -n "${HB}" || { echo "FATAL: hermes 命令未找到"; exit 1; }; \
+        echo "hermes 安装位置: ${HB}"; \
+        ln -sf "${HB}" /usr/local/bin/hermes; \
+        HOME=/opt/hermes-home /usr/local/bin/hermes --version; \
     else \
         echo "skip hermes (WITH_HERMES=0)"; \
     fi
 
-ENV AGENTFLOW_HERMES_HOME=/opt/hermes-home \
-    AGENTFLOW_HERMES_BIN=/opt/hermes-home/.hermes/bin/hermes
+ENV AGENTFLOW_HERMES_HOME=/opt/hermes-home/.hermes \
+    AGENTFLOW_HERMES_BIN=/usr/local/bin/hermes \
+    HERMES_HOME=/opt/hermes-home/.hermes
 
 # 让 `docker run` 直接能看到版本，部署后可一条命令自检
 LABEL org.opencontainers.image.title="loopforge + agent CLIs" \

@@ -149,23 +149,25 @@ func (h *assistantHandlers) chat(c *gin.Context) {
 	}
 	if shared {
 		if old, ok := h.repo.AssistantSession(ownerID, req.SessionID); ok {
-			if !sharedTranscriptPrefix(old.Messages, req.Messages) {
+			merged, consistent := mergeAssistantTranscript(old.Messages, req.Messages)
+			if !consistent {
 				c.JSON(409, gin.H{"error": "共享会话已更新，请重新打开后发送"})
 				return
 			}
-			for i := len(old.Messages); i < len(req.Messages); i++ {
-				if req.Messages[i].Role != "user" {
+			for i := len(old.Messages); i < len(merged); i++ {
+				if merged[i].Role != "user" {
 					c.JSON(400, gin.H{"error": "不能伪造共享回复"})
 					return
 				}
-				if req.Messages[i].CreatedAt.IsZero() {
-					req.Messages[i].CreatedAt = time.Now().UTC()
+				if merged[i].CreatedAt.IsZero() {
+					merged[i].CreatedAt = time.Now().UTC()
 				}
-				req.Messages[i].AuthorID = user.ID
-				req.Messages[i].AuthorName = user.LoginName
-				req.Messages[i].SpeakerName = ""
-				req.Messages[i].SpeakerAgentID = ""
+				merged[i].AuthorID = user.ID
+				merged[i].AuthorName = user.LoginName
+				merged[i].SpeakerName = ""
+				merged[i].SpeakerAgentID = ""
 			}
+			req.Messages = merged
 		}
 	} else {
 		// Generations stamp their question before this point; a direct chat

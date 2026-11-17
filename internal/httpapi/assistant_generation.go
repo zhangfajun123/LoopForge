@@ -70,22 +70,24 @@ func (h *assistantHandlers) startGeneration(c *gin.Context) {
 	}
 	if shared {
 		if old, ok := h.repo.AssistantSession(ownerID, req.SessionID); ok {
-			if !sharedTranscriptPrefix(old.Messages, req.Messages) {
+			merged, consistent := mergeAssistantTranscript(old.Messages, req.Messages)
+			if !consistent {
 				c.JSON(409, gin.H{"error": "共享会话已更新，请重新打开后发送"})
 				return
 			}
-			for i := len(old.Messages); i < len(req.Messages); i++ {
-				if req.Messages[i].Role != "user" {
+			for i := len(old.Messages); i < len(merged); i++ {
+				if merged[i].Role != "user" {
 					c.JSON(400, gin.H{"error": "不能伪造共享回复"})
 					return
 				}
-				req.Messages[i].AuthorID = user.ID
-				req.Messages[i].AuthorName = user.LoginName
-				req.Messages[i].SpeakerName = ""
-				req.Messages[i].SpeakerAgentID = ""
-				req.Messages[i].Model = ""
-				req.Messages[i].Usage = nil
+				merged[i].AuthorID = user.ID
+				merged[i].AuthorName = user.LoginName
+				merged[i].SpeakerName = ""
+				merged[i].SpeakerAgentID = ""
+				merged[i].Model = ""
+				merged[i].Usage = nil
 			}
+			req.Messages = merged
 		}
 	}
 	if err := h.prepareWorkbenchContext(c, &req, user); err != nil {

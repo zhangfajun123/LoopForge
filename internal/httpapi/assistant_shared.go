@@ -114,6 +114,51 @@ func sharedTranscriptPrefix(old []assistantMessage, next []assistantMessage) boo
 	}
 	return true
 }
+// mergeAssistantTranscript reconciles a client transcript with the server's copy
+// instead of demanding an exact prefix. A reader that sent the next question
+// before the previous reply reached its transcript still holds a prefix of the
+// stored transcript, so that case must not fail with 「共享会话已更新」: the
+// server's replies are kept and only the client's new user messages are
+// appended. Any other divergence (a changed user message, a forged assistant
+// reply) is refused.
+func mergeAssistantTranscript(old, req []assistantMessage) ([]assistantMessage, bool) {
+	matched := 0
+	var pending []assistantMessage
+	for _, want := range req {
+		for matched < len(old) && !assistantMessageEqual(old[matched], want) {
+			// A reply the reader has not rendered yet may be skipped; a user
+			// message may not, that would be a rewrite of the transcript.
+			if old[matched].Role != "assistant" {
+				return nil, false
+			}
+			matched++
+		}
+		if matched < len(old) {
+			matched++
+			continue
+		}
+		if want.Role != "user" {
+			return nil, false
+		}
+		pending = append(pending, want)
+	}
+	for ; matched < len(old); matched++ {
+		if old[matched].Role != "assistant" {
+			return nil, false
+		}
+	}
+	merged := make([]assistantMessage, 0, len(old)+len(pending))
+	merged = append(merged, old...)
+	merged = append(merged, pending...)
+	return merged, true
+}
+
+func assistantMessageEqual(a, b assistantMessage) bool {
+	left, _ := json.Marshal(a)
+	right, _ := json.Marshal(b)
+	return bytes.Equal(left, right)
+}
+
 func assistantRequestApprovalMode(req assistantRequest) string {
 	return normalizeAssistantApprovalMode(req.ApprovalMode)
 }

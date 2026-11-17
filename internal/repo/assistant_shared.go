@@ -120,8 +120,19 @@ func (r *AssistantRepo) PutSharedAssistantReceipt(userID int64, next domain.Assi
 		old := decodeAssistantSession(row)
 		a, _ := json.Marshal(old.Messages)
 		b, _ := json.Marshal(expected.Messages)
-		if !(old.Shared || ProjectSharedAssistantSession(old)) || !old.UpdatedAt.Equal(expected.UpdatedAt) || !bytes.Equal(a, b) {
+		if !(old.Shared || ProjectSharedAssistantSession(old)) || !bytes.Equal(a, b) {
 			return fmt.Errorf("共享会话已更新，请重新打开")
+		}
+		if !old.UpdatedAt.Equal(expected.UpdatedAt) {
+			// The platform writes the generated title back a few seconds after the
+			// first turn, which bumps updated_at without touching any message. That
+			// alone must not force the reader to reopen the conversation: accept the
+			// receipt when the client is not editing the title, and keep the newer
+			// server-side title instead of the stale copy the client holds.
+			if next.Title != expected.Title {
+				return fmt.Errorf("共享会话已更新，请重新打开")
+			}
+			next.Title, next.TitleGenerated = old.Title, old.TitleGenerated
 		}
 		var active int64
 		if err := tx.Model(&assistantGenerationRow{}).Where("session_id = ? AND status = ?", next.ID, "running").Count(&active).Error; err != nil {

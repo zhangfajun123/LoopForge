@@ -862,6 +862,7 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 		return execResult{status: domain.RunnerTaskFailed, errMsg: err.Error()}, nil
 	}
 	if runtime.IsAgentCLI(prepared.Command.Provider) {
+		d.traceAgentCLI(task, "enter provider=%q executor=%q argv0=%q argv_len=%d", prepared.Command.Provider, inv.Executor.ID, firstArg(argv), len(argv))
 		cred := runtime.ProviderCredential{APIKey: inv.AgentCLIAPIKey, BaseURL: inv.AgentCLIBaseURL, Protocol: inv.AgentCLIProtocol, Models: inv.AgentCLIModels}
 		var agentEnv map[string]string
 		argv, agentEnv, err = runtime.BindAgentCLICommand(sandbox, workspace, prepared.Command, cred, argv)
@@ -904,6 +905,8 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 			// place for an operator to read the decision.
 			log.Printf("agent cli decision task=%s provider=%s sandbox=%v driver=%q localBinary=%v probed=%v variant=%v standalone=%v adapted=%v argv=%.320s",
 				task.ID, prepared.Command.Provider, sandbox != nil, driver, localBinary, len(help) > 0, variantSupported, standaloneSupported, localBinary, strings.Join(argv, " "))
+			d.traceAgentCLI(task, "decide sandbox=%v driver=%q localBinary=%v probed=%v variant=%v standalone=%v adapted=%v argv=%.320s",
+				sandbox != nil, driver, localBinary, len(help) > 0, variantSupported, standaloneSupported, localBinary, strings.Join(argv, " "))
 		}
 	} else if prepared.Command.PrivateHome {
 		// Provider CLIs (codex/claude-code/codebuddy) used to receive a private

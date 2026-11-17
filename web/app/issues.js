@@ -731,18 +731,24 @@ async function executionRunnerChoices(projectId){
   }catch(err){return {defaultRunnerId:'',options:[]}}
 }
 // 返回 null 表示用户取消了启动；返回 '' 表示跟随默认机器。
+// 选择框自身出任何问题都必须放行（回落到默认机器），否则触发按钮会永远点不动。
 async function pickExecutionRunner(projectId){
-  const {defaultRunnerId,options}=await executionRunnerChoices(projectId);
-  const alternatives=options.filter(o=>o.id!==defaultRunnerId);
-  if(!alternatives.length)return '';
-  const defaultName=options.find(o=>o.id===defaultRunnerId)?.name||'未设置默认机器';
-  return afSelect({
-    title:'选择执行机器',
-    message:'整条 SOP 全程在这台机器上执行；代码改动不跨机器迁移。',
-    label:'执行机器',
-    choices:[{value:'',label:`跟随我的默认（${defaultName}）`},...alternatives.map(o=>({value:o.id,label:o.isMine?o.name:`${o.name}（云端池）`}))],
-    confirmText:'启动 SOP'
-  });
+  try{
+    const {defaultRunnerId,options}=await executionRunnerChoices(projectId);
+    const alternatives=options.filter(o=>o.id!==defaultRunnerId);
+    if(!alternatives.length)return '';
+    const defaultName=options.find(o=>o.id===defaultRunnerId)?.name||'未设置默认机器';
+    return afSelect({
+      title:'选择执行机器',
+      message:'整条 SOP 全程在这台机器上执行；代码改动不跨机器迁移。',
+      label:'执行机器',
+      choices:[{value:'',label:`跟随我的默认（${defaultName}）`},...alternatives.map(o=>({value:o.id,label:o.isMine?o.name:`${o.name}（云端池）`}))],
+      confirmText:'启动 SOP'
+    });
+  }catch(err){
+    console.error('pickExecutionRunner failed, following the default machine',err);
+    return '';
+  }
 }
 async function dispatchIssue(){try{let issue=issueFromForm();const blocked=issueExecutionBlocked(issue);if(blocked)return toast(blocked);const current=latestIssueTask(issue),rerun=!!current;if(current&&!await afConfirm({title:'重新运行确认',message:['queued','dispatched','running'].includes(current.status)?'该需求已有进行中的任务，确定额外发起一次重新运行吗？':'该需求已经处理过，确定整条 SOP 重新运行吗？',confirmText:'确认重新运行'}))return;const machinePick=await pickExecutionRunner(issue.projectId);if(machinePick===null)return;const button=$('#dispatchIssue');button.disabled=true;button.textContent='正在调度…';issue=await persistIssue(issue);const task=await api(`/api/issues/${issue.id}/dispatch`,{method:'POST',body:JSON.stringify({rerun,workflowId:issue.workflowId||'',executionRunnerId:machinePick||undefined})});issue.latestTaskId=task.id;issue.status='in_progress';const idx=state.data.issues.findIndex(i=>i.id===issue.id);if(idx>=0)state.data.issues[idx]=issue;if(!state.data.tasks)state.data.tasks=[];const existingTaskIdx=state.data.tasks.findIndex(t=>t.id===task.id);if(existingTaskIdx>=0)state.data.tasks[existingTaskIdx]=task;else state.data.tasks.unshift(task);if(task.runId){startLiveRun(task.runId);try{const run=await api(`/api/runs/${encodeURIComponent(task.runId)}`,{silent:true});if(run?.id){if(!state.data.runs)state.data.runs=[];const rIdx=state.data.runs.findIndex(r=>r.id===run.id);if(rIdx>=0)state.data.runs[rIdx]={...state.data.runs[rIdx],...run};else state.data.runs=sortRunsDescending([run,...state.data.runs]);}}catch(e){}}$('#issueModal').classList.remove('open');renderIssues();await openIssueDetail(issue.id,'sop');toast(rerun?'已创建重新运行':'已创建执行任务并启动工作流','ok');Promise.all([refreshIssues(),refreshRuns(true)]).catch(()=>{});}catch(err){toast(err.message)}finally{const button=$('#dispatchIssue');button.disabled=false;button.textContent='启动 SOP'}}
 async function dispatchIssueById(issueId,rerun=false,workflowId=''){try{const issue=(state.data.issues||[]).find(i=>i.id===issueId),blocked=issueExecutionBlocked(issue);if(blocked)return toast(blocked);if(clarificationNeedsConfirm(issue)){openIssueDetail(issueId,'clarify');return toast('请先确认澄清结论后再触发 SOP')}

@@ -322,7 +322,18 @@ function afSelect(options){
   return afOpenDialog(()=>{
     $('#confirmTitle').textContent=opt.title||'请选择';
     $('#confirmMessage').textContent=opt.message||'';
-    const wrap=$('#confirmPromptWrap'),single=$('#confirmPromptInput'),multi=$('#confirmPromptMultiline'),select=$('#confirmChoiceSelect');
+    const wrap=$('#confirmPromptWrap'),single=$('#confirmPromptInput'),multi=$('#confirmPromptMultiline');
+    // The dialog markup exists twice: statically in index.html and as a fallback
+    // template in this file. Never assume the select is there — build it when a
+    // page ships markup that predates it, otherwise a stale dialog kills dispatch.
+    let select=$('#confirmChoiceSelect');
+    if(!select&&wrap){
+      select=document.createElement('select');
+      select.id='confirmChoiceSelect';
+      select.className='select';
+      select.hidden=true;
+      wrap.appendChild(select);
+    }
     wrap.hidden=false;
     single.hidden=true;
     multi.hidden=true;

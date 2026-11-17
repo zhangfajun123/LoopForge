@@ -901,6 +901,25 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 			return execResult{status: domain.RunnerTaskFailed, errMsg: err.Error()}, nil
 		}
 	}
+	// Agent CLIs drift between versions: a flag a role depends on can disappear.
+	// Judge the final argv against the executing machine's own help before the
+	// turn spends anything, so the failure names the flag and the CLI version
+	// instead of surfacing as a bare "exit status 1" twenty seconds in.
+	if runtime.IsAgentCLI(prepared.Command.Provider) && len(argv) > 0 && os.Getenv("AGENTFLOW_SKIP_CLI_PREFLIGHT") != "1" {
+		subcommand := ""
+		if len(argv) > 1 && !strings.HasPrefix(argv[1], "-") {
+			subcommand = argv[1]
+		}
+		if missing := missingCLIFlags(argv, d.agentCLIHelpText(argv[0], subcommand)); len(missing) > 0 {
+			version := strings.TrimSpace(d.agentCLIVersionText(argv[0]))
+			if version != "" {
+				version = "（" + version + "）"
+			}
+			return execResult{status: domain.RunnerTaskFailed, errMsg: fmt.Sprintf(
+				"执行机器的 %s%s 不接受参数 %s：该版本 CLI 已移除或改名，请统一执行机器的 CLI 版本或调整角色配置后重试",
+				prepared.Command.Provider, version, strings.Join(missing, "、"))}, nil
+		}
+	}
 	commandEnv := runtime.CommandEnvironment(prepared.Command)
 	for key, value := range d.taskManagedEnvironment(task) {
 		commandEnv[key] = value

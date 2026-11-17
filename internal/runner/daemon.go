@@ -871,20 +871,31 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 		for key, value := range agentEnv {
 			credentialEnv[key] = value
 		}
-		// opencode 2.x dropped the standalone --variant flag and reads the effort
-		// from the model id, so a 1.x argv dies before the turn starts. Probe the
-		// binary that will actually run; inside a docker sandbox that is the
-		// image's CLI, which this host cannot inspect, so leave it alone.
-		if prepared.Command.Provider == runtime.AgentCLIOpenCode && (sandbox == nil || !strings.EqualFold(task.Sandbox.Profile.Driver, "docker")) {
-			argv = runtime.FoldOpenCodeVariant(argv, d.agentCLIAcceptsFlag(argv[0], "run", "--variant"))
-			// Every task runs in its own private HOME, but opencode's managed
-			// service listens on one fixed port, so a service left behind by an
-			// earlier attempt makes the next agent die with "Managed service port
-			// ... is already in use". A private server keeps the isolation real
-			// and never touches the machine owner's own opencode session.
-			if d.agentCLIAcceptsFlag(argv[0], "run", "--standalone") {
-				argv = runtime.WithOpenCodeStandalone(argv)
+		if prepared.Command.Provider == runtime.AgentCLIOpenCode {
+			driver := ""
+			if sandbox != nil {
+				driver = task.Sandbox.Profile.Driver
 			}
+			help := d.agentCLIHelpText(argv[0], "run")
+			variantSupported := mentionsFlag(help, "--variant")
+			standaloneSupported := mentionsFlag(help, "--standalone")
+			// Inside a docker sandbox the CLI belongs to the image, not to this
+			// host, so the probe above describes the wrong binary and no
+			// adaptation is safe.
+			inContainer := sandbox != nil && strings.EqualFold(driver, "docker")
+			if !inContainer {
+				argv = runtime.FoldOpenCodeVariant(argv, variantSupported)
+				if standaloneSupported {
+					argv = runtime.WithOpenCodeStandalone(argv)
+				}
+			}
+			// The platform's argv shows up in the node log; what this machine
+			// decided is invisible, so a version mismatch looked like a mystery.
+			// One line per agent task answers "did the runner change anything, and
+			// why not".
+			_ = d.client.SendEvents(ctx, task.ID, []domain.RunnerTaskEvent{{Seq: 1, Type: "system", Ts: time.Now().UTC(),
+				Data: fmt.Sprintf("runner argv: sandbox=%v driver=%q probed=%v variant=%v standalone=%v adapted=%v final=%.320s",
+					sandbox != nil, driver, len(help) > 0, variantSupported, standaloneSupported, !inContainer, strings.Join(argv, " "))}})
 		}
 	} else if prepared.Command.PrivateHome {
 		// Provider CLIs (codex/claude-code/codebuddy) used to receive a private

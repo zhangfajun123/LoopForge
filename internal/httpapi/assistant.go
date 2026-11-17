@@ -1500,6 +1500,10 @@ func runAssistantCLI(ctx context.Context, req assistantCLIRequest, user domain.U
 	var stderrTail []string
 	var missingSession, modelStarted, credentialRejected bool
 	var usage domain.TokenUsage
+	// Agent CLIs that answer in plain text (Hermes) never emit a type=result
+	// envelope, so the answer is accumulated from the streamed text deltas and
+	// promoted to the result when no envelope showed up.
+	var answerText strings.Builder
 	missingText := "No conversation found with session ID: " + inv.sessionRef
 	var handle func(string)
 	sink := func(event domain.TelemetryEvent) {
@@ -1569,6 +1573,10 @@ func runAssistantCLI(ctx context.Context, req assistantCLIRequest, user domain.U
 				}
 			}
 		}
+		// Plain-text CLIs stream content deltas instead of a result envelope.
+		if text := assistantTextDelta(line); text != "" {
+			answerText.WriteString(text)
+		}
 	}
 	execute := req.Execute
 	if execute == nil {
@@ -1577,6 +1585,11 @@ func runAssistantCLI(ctx context.Context, req assistantCLIRequest, user domain.U
 	attempt.phase("execution")
 	_, err = execute(ctx, workspace, command, inv.credentials, sink)
 	attempt.exited(err)
+	if strings.TrimSpace(final) == "" {
+		if text := strings.TrimSpace(answerText.String()); text != "" {
+			final = text
+		}
+	}
 	if err == nil {
 		attempt.phase("protocol")
 	}
@@ -1658,6 +1671,39 @@ var errAssistantCredentialRejected = errors.New("CodeBuddy 拒绝了你的 API K
 func isCredentialRejection(text string) bool {
 	text = strings.TrimSpace(text)
 	return len(text) < 120 && (strings.HasPrefix(text, "401 ") || strings.HasPrefix(text, "403 ") || text == "401" || text == "403")
+}
+
+// assistantTextDelta extracts the text of a streamed content-block delta. CLIs
+// that answer in plain text (Hermes) never send a type=result envelope, so the
+// caller accumulates these deltas and promotes them to the result.
+func assistantTextDelta(line string) string {
+	var ev struct {
+		Type    string `json:"type"`
+		Message struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+		Event struct {
+			Delta struct {
+				Text string `json:"text"`
+			} `json:"delta"`
+		} `json:"event"`
+	}
+	if json.Unmarshal([]byte(line), &ev) != nil {
+		return ""
+	}
+	if ev.Type == "assistant" {
+		var b strings.Builder
+		for _, c := range ev.Message.Content {
+			if c.Type == "" || c.Type == "text" {
+				b.WriteString(c.Text)
+			}
+		}
+		return b.String()
+	}
+	return ev.Event.Delta.Text
 }
 
 func decodeAssistantCLIResult(final string, resultError bool, processErr error, stderr []string) (string, error) {

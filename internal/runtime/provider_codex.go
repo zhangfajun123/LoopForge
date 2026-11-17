@@ -195,5 +195,9 @@ func codexMCPServerArgs(m domain.MCPServerDefinition) []string {
 	if m.TimeoutSec > 0 {
 		args = append(args, "-c", fmt.Sprintf("%stool_timeout_sec=%d.0", prefix, m.TimeoutSec))
 	}
+	// The platform gate MCP applies the node's approval decision itself; without
+	// this, Codex refuses every MCP call under approval_policy=never, so
+	// submit_gate_result never runs and the node stalls without a terminal state.
+	args = append(args, "-c", prefix+`default_tools_approval_mode="approve"`)
 	return args
 }

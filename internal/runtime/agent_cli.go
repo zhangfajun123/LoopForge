@@ -382,6 +382,14 @@ func ApplyAgentCLICredential(kind string, cred ProviderCredential, options Agent
 		return nil, nil, fmt.Errorf("%s 需要在个人配置中填写 Base URL", AgentCLILabel(kind))
 	}
 	model := strings.TrimSpace(options.Model)
+	if model == "" || strings.EqualFold(model, "default") {
+		// A role/session that never picked a model stores the literal "default"
+		// (or nothing). Falling through to the CLI's built-in default asks the
+		// gateway for a model it does not host (404), so use the first model the
+		// responsible user saved for this CLI.
+		model = FirstCredentialModel(cred.Models)
+		options.Model = model
+	}
 	if model == "" && !agentCLIModelOptional(kind, baseURL) {
 		return nil, nil, fmt.Errorf("%s 需要指定模型", AgentCLILabel(kind))
 	}
@@ -610,4 +618,16 @@ func withCursorModelArg(argv []string, id string) []string {
 		}
 	}
 	return argv
+}
+
+// FirstCredentialModel returns the first real model id a user saved for a CLI.
+// The placeholder "default" is skipped so callers can resolve it to something
+// the gateway actually hosts.
+func FirstCredentialModel(models []domain.CLIModel) string {
+	for _, model := range models {
+		if id := strings.TrimSpace(model.ID); id != "" && !strings.EqualFold(id, "default") {
+			return id
+		}
+	}
+	return ""
 }

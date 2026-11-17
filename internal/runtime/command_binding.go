@@ -117,6 +117,13 @@ func bindCommand(sandbox Sandbox, workspace string, command CommandSpec, credent
 				return CommandSpec{}, err
 			}
 			bound.Argv = argv
+			// A role that never picked a model leaves Codex on its built-in
+			// default, which this gateway does not host (404 Model not found).
+			if !codexArgvHasModel(bound.Argv) {
+				if model := FirstCredentialModel(credentials.Codex.Models); model != "" {
+					bound.Argv = codexPrefixedConfig(bound.Argv, "model="+strconv.Quote(model))
+				}
+			}
 		case BindClaudeCode:
 			bound.environment["ANTHROPIC_API_KEY"] = strings.TrimSpace(credentials.ClaudeCode.APIKey)
 			if bound.environment["ANTHROPIC_API_KEY"] == "" {
@@ -423,4 +430,40 @@ func writeGitAskPass(workspace, path string) error {
 		return fmt.Errorf("write git askpass: %w", err)
 	}
 	return nil
+}
+
+// codexArgvHasModel reports whether the invocation already names a model.
+func codexArgvHasModel(argv []string) bool {
+	for i, arg := range argv {
+		switch {
+		case arg == "-m" || arg == "--model":
+			if i+1 < len(argv) && strings.TrimSpace(argv[i+1]) != "" {
+				return true
+			}
+		case strings.HasPrefix(arg, "--model="):
+			if strings.TrimSpace(strings.TrimPrefix(arg, "--model=")) != "" {
+				return true
+			}
+		case arg == "-c" || arg == "--config":
+			if i+1 < len(argv) {
+				value := strings.ReplaceAll(argv[i+1], " ", "")
+				if strings.HasPrefix(value, "model=") && strings.Trim(value[len("model="):], "\"") != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// codexPrefixedConfig inserts one `-c key=value` override before Codex's
+// positional prompt, which must stay last.
+func codexPrefixedConfig(argv []string, assignment string) []string {
+	if len(argv) < 2 {
+		return argv
+	}
+	out := make([]string, 0, len(argv)+2)
+	out = append(out, argv[:len(argv)-1]...)
+	out = append(out, "-c", assignment)
+	return append(out, argv[len(argv)-1])
 }

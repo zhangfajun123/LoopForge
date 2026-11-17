@@ -65,6 +65,8 @@ func prepareAssistantAgentCLIInvocation(kind string, o assistantEngineInvocation
 		command:     command,
 		credentials: runtime.RunCredentials{AgentCLI: map[string]runtime.ProviderCredential{kind: o.User}},
 		sessionRef:  resume,
+		// Hermes answers in plain text and never emits a type=result envelope.
+		plainTextAnswer: kind == runtime.AgentCLIHermes,
 		translate: func(line string) []string {
 			out := translate(line)
 			for i, translated := range out {

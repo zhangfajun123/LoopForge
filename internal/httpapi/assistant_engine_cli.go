@@ -28,6 +28,9 @@ type assistantCLIInvocation struct {
 	credentials runtime.RunCredentials
 	sessionRef  string
 	translate   func(string) []string
+	// plainTextAnswer is true for CLIs that answer in plain text (Hermes) and
+	// never emit a type=result envelope; their streamed text becomes the result.
+	plainTextAnswer bool
 	// resumeMissing is true when the CLI cannot resume before it even
 	// starts (Codex without a recorded thread for the session).
 	resumeMissing bool

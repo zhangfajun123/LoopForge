@@ -1574,8 +1574,10 @@ func runAssistantCLI(ctx context.Context, req assistantCLIRequest, user domain.U
 			}
 		}
 		// Plain-text CLIs stream content deltas instead of a result envelope.
-		if text := assistantTextDelta(line); text != "" {
-			answerText.WriteString(text)
+		if inv.plainTextAnswer {
+			if text := assistantTextDelta(line); text != "" {
+				answerText.WriteString(text)
+			}
 		}
 	}
 	execute := req.Execute
@@ -1585,7 +1587,7 @@ func runAssistantCLI(ctx context.Context, req assistantCLIRequest, user domain.U
 	attempt.phase("execution")
 	_, err = execute(ctx, workspace, command, inv.credentials, sink)
 	attempt.exited(err)
-	if strings.TrimSpace(final) == "" {
+	if strings.TrimSpace(final) == "" && inv.plainTextAnswer {
 		if text := strings.TrimSpace(answerText.String()); text != "" {
 			final = text
 		}

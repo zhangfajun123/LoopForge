@@ -14,6 +14,22 @@ import (
 // a user can read in the console or chat UI.
 var visibleOldBrand = regexp.MustCompile(`AgentFlow([^A-Za-z0-9_]|$)`)
 
+// The login page is shipped from the embedded bundle, so its footer link must
+// point at this project's GitHub repository.
+func TestLoginPageGitHubLinkTargetsProjectRepository(t *testing.T) {
+	page, err := fs.ReadFile(Files, "login.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `href="https://github.com/zhangfajun123/LoopForge"`
+	if !strings.Contains(string(page), want) {
+		t.Errorf("login.html is missing the project GitHub link %s", want)
+	}
+	if strings.Contains(string(page), "https://github.com/Tencent/LoopForge") {
+		t.Error("login.html still links to the old GitHub repository")
+	}
+}
+
 func TestUserFacingFrontendSaysLoopForge(t *testing.T) {
 	roots := []string{"app", "extensions", "../chatbot/src", "../chatbot/public"}
 	files := []string{"../chatbot/index.html", "mcp-setup.txt"}

@@ -871,8 +871,17 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 		for key, value := range agentEnv {
 			credentialEnv[key] = value
 		}
-	} else if sandbox != nil && inv.CredentialSource == domain.RuntimeAuthPersonal && prepared.Command.PrivateHome {
-		credentialEnv, err = bindSandboxPrivateHome(workspace, task.Sandbox.Profile.Driver, task.Provider, credentialEnv)
+	} else if prepared.Command.PrivateHome {
+		// Provider CLIs (codex/claude-code/codebuddy) used to receive a private
+		// HOME only when the run carried a sandbox, so a native run inherited the
+		// machine's real ~/.codex: whatever that host kept in config.toml leaked
+		// into the task and could fail it (a host provider block made Codex ask
+		// for AGENTFLOW_API_KEY and exit 1).
+		driver := ""
+		if sandbox != nil {
+			driver = task.Sandbox.Profile.Driver
+		}
+		credentialEnv, err = bindProviderPrivateHome(workspace, driver, task.Provider, inv.CredentialSource, credentialEnv)
 		if err != nil {
 			return execResult{status: domain.RunnerTaskFailed, errMsg: err.Error()}, nil
 		}
@@ -1029,6 +1038,55 @@ func bindSandboxPrivateHome(workspace, driver, provider string, env map[string]s
 		env["CLAUDE_CONFIG_DIR"] = filepath.ToSlash(filepath.Join(env["HOME"], ".claude"))
 	}
 	return env, nil
+}
+
+// providerLoginFiles lists where a provider CLI keeps its login state, relative
+// to HOME. Only the login artifact is carried into a private HOME — never the
+// CLI's configuration, which is what used to leak in from the runner's host.
+var providerLoginFiles = map[string][]string{
+	"codex":       {".codex/auth.json"},
+	"claude-code": {".claude/.credentials.json"},
+}
+
+// bindProviderPrivateHome gives a provider CLI its own HOME below the workspace
+// so the machine's user-level configuration cannot leak into a task. In local
+// credential mode it also seeds the CLI's login state, so the task still runs as
+// the logged-in user without inheriting their config.
+func bindProviderPrivateHome(workspace, driver, provider, credentialSource string, env map[string]string) (map[string]string, error) {
+	env, err := bindSandboxPrivateHome(workspace, driver, provider, env)
+	if err != nil {
+		return nil, err
+	}
+	if credentialSource == domain.RuntimeAuthPersonal {
+		return env, nil
+	}
+	realHome, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(realHome) == "" {
+		return env, nil
+	}
+	privateHome := filepath.Join(workspace, ".agentflow", "private-home", provider)
+	for _, rel := range providerLoginFiles[provider] {
+		seedProviderLoginFile(realHome, privateHome, rel)
+	}
+	return env, nil
+}
+
+// seedProviderLoginFile copies one login artifact into the private HOME when the
+// source exists and the destination does not. Best effort: a missing login only
+// means the CLI starts logged out.
+func seedProviderLoginFile(realHome, privateHome, rel string) {
+	data, err := os.ReadFile(filepath.Join(realHome, filepath.FromSlash(rel)))
+	if err != nil {
+		return
+	}
+	target := filepath.Join(privateHome, filepath.FromSlash(rel))
+	if _, err := os.Lstat(target); err == nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(target, data, 0o600)
 }
 
 // bindInvocationCredentials maps the closed credential bindings onto the

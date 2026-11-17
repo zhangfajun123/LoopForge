@@ -872,41 +872,24 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 		for key, value := range agentEnv {
 			credentialEnv[key] = value
 		}
+		driver := ""
+		if sandbox != nil {
+			driver = task.Sandbox.Profile.Driver
+		}
+		var decision agentCLIDecision
+		argv, decision = d.decideAgentCLIArgv(prepared.Command.Provider, sandbox != nil, driver, argv)
 		if prepared.Command.Provider == runtime.AgentCLIOpenCode {
-			driver := ""
-			if sandbox != nil {
-				driver = task.Sandbox.Profile.Driver
-			}
-			help := d.agentCLIHelpText(argv[0], "run")
-			variantSupported := mentionsFlag(help, "--variant")
-			standaloneSupported := mentionsFlag(help, "--standalone")
-			// Judge where the CLI actually runs, not which sandbox profile the SOP
-			// declares: an agent CLI with a private HOME executes on this host even
-			// when the run carries a docker sandbox, and a probe of a missing path
-			// describes some other binary. argv[0] existing here is the evidence.
-			localBinary := false
-			if len(argv) > 0 {
-				if info, statErr := os.Stat(argv[0]); statErr == nil && !info.IsDir() {
-					localBinary = true
-				}
-			}
-			if localBinary {
-				argv = runtime.FoldOpenCodeVariant(argv, variantSupported)
-				if standaloneSupported {
-					argv = runtime.WithOpenCodeStandalone(argv)
-				}
-			}
 			// The platform's argv shows up in the node log; what this machine
 			// decided is invisible, so a version mismatch looked like a mystery.
 			// The node log cannot carry this line: (task_id, seq) is the event
 			// idempotency key, so a runner-chosen seq is dropped when the agent
 			// stream already used it, and a large seq would push the platform's
-			// cursor past the agent's own output. The runner's log is the honest
-			// place for an operator to read the decision.
-			log.Printf("agent cli decision task=%s provider=%s sandbox=%v driver=%q localBinary=%v probed=%v variant=%v standalone=%v adapted=%v argv=%.320s",
-				task.ID, prepared.Command.Provider, sandbox != nil, driver, localBinary, len(help) > 0, variantSupported, standaloneSupported, localBinary, strings.Join(argv, " "))
-			d.traceAgentCLI(task, "decide sandbox=%v driver=%q localBinary=%v probed=%v variant=%v standalone=%v adapted=%v argv=%.320s",
-				sandbox != nil, driver, localBinary, len(help) > 0, variantSupported, standaloneSupported, localBinary, strings.Join(argv, " "))
+			// cursor past the agent's own output. The runner's log and the
+			// decisions file are where an operator reads it.
+			log.Printf("agent cli decision task=%s provider=%s sandbox=%v driver=%q localBinary=%v probed=%v variant=%v standalone=%v argv=%.320s",
+				task.ID, decision.Provider, decision.Sandboxed, decision.Driver, decision.LocalBinary, decision.Probed, decision.VariantSupported, decision.StandaloneSupported, strings.Join(argv, " "))
+			d.traceAgentCLI(task, "decide sandbox=%v driver=%q localBinary=%v probed=%v variant=%v standalone=%v argv=%.320s",
+				decision.Sandboxed, decision.Driver, decision.LocalBinary, decision.Probed, decision.VariantSupported, decision.StandaloneSupported, strings.Join(argv, " "))
 		}
 	} else if prepared.Command.PrivateHome {
 		// Provider CLIs (codex/claude-code/codebuddy) used to receive a private

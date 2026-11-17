@@ -871,6 +871,13 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 		for key, value := range agentEnv {
 			credentialEnv[key] = value
 		}
+		// opencode 2.x dropped the standalone --variant flag and reads the effort
+		// from the model id, so a 1.x argv dies before the turn starts. Probe the
+		// binary that will actually run; inside a docker sandbox that is the
+		// image's CLI, which this host cannot inspect, so leave it alone.
+		if prepared.Command.Provider == runtime.AgentCLIOpenCode && (sandbox == nil || !strings.EqualFold(task.Sandbox.Profile.Driver, "docker")) {
+			argv = runtime.FoldOpenCodeVariant(argv, d.agentCLIAcceptsFlag(argv[0], "run", "--variant"))
+		}
 	} else if prepared.Command.PrivateHome {
 		// Provider CLIs (codex/claude-code/codebuddy) used to receive a private
 		// HOME only when the run carried a sandbox, so a native run inherited the

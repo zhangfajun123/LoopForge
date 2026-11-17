@@ -12,12 +12,11 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
 func terminalBaseEnvironment(home string) []string {
-	return []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "TERM=xterm-256color", "LANG=C.UTF-8"}
+	return append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + home}, terminalPlatformEnvironment(home)...)
 }
 
 // Select the interactive shell inside the sandbox, where installed shells may
@@ -66,7 +65,8 @@ func sandboxTerminalCommandWithBinding(ctx context.Context, sandbox Sandbox, bin
 	if err != nil {
 		return nil, "", err
 	}
-	command := CommandSpec{Argv: []string{"/bin/sh", "-c", terminalShellLaunch}, environment: map[string]string{
+	argv := terminalShellArgv(terminalShellLaunch)
+	command := CommandSpec{Argv: argv, environment: map[string]string{
 		"HOME": home, "TERM": "xterm-256color", "LANG": "C.UTF-8",
 		"AGENTFLOW_TERMINAL_ID":   filepath.Base(home),
 		"AGENTFLOW_TERMINAL_HOST": sandbox.ID(),
@@ -78,9 +78,9 @@ func sandboxTerminalCommandWithBinding(ctx context.Context, sandbox Sandbox, bin
 			return nil, "", relErr
 		}
 		command.environment["HOME"] = filepath.ToSlash(filepath.Join("/workspace", rel))
-		command.Argv[2] = `umask 077
+		command.Argv = []string{"/bin/sh", "-c", `umask 077
 printf '%s\n' "$$" > "$HOME/.terminal-pid" || exit
-` + terminalShellLaunch
+` + terminalShellLaunch}
 	}
 	cmd, err := sandboxTerminalCommandBound(ctx, sandbox, command, terminalBaseEnvironment(home), bind)
 	if err != nil {
@@ -210,7 +210,7 @@ func filesystemEnvironmentIdentity(workspace, driver string, environment map[str
 	if err != nil {
 		return "", err
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
+	device, inode, ok := workspaceFileIdentity(workspace, info)
 	if !ok {
 		return "", fmt.Errorf("workspace filesystem identity unavailable")
 	}
@@ -221,7 +221,7 @@ func filesystemEnvironmentIdentity(workspace, driver string, environment map[str
 		Inode        uint64
 		Environment  map[string]string
 		ProcessEpoch string
-	}{driver, filepath.Clean(workspace), uint64(stat.Dev), stat.Ino, environment, terminalProcessEnvironmentEpoch()})
+	}{driver, filepath.Clean(workspace), device, inode, environment, terminalProcessEnvironmentEpoch()})
 	if err != nil {
 		return "", err
 	}

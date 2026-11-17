@@ -24,13 +24,12 @@ func serveGateMCPBinary(c *gin.Context) {
 		return
 	}
 	if pattern := strings.TrimSpace(os.Getenv("AGENTFLOW_GATE_MCP_BINARY")); pattern != "" {
-		path := strings.ReplaceAll(strings.ReplaceAll(pattern, "{os}", targetOS), "{arch}", targetArch)
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() || info.Size() == 0 {
+		path, ok := resolveDeployedBinary(strings.ReplaceAll(strings.ReplaceAll(pattern, "{os}", targetOS), "{arch}", targetArch), targetOS)
+		if !ok {
 			c.JSON(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("gate MCP binary %s/%s is not deployed", targetOS, targetArch)})
 			return
 		}
-		serveGateMCPFile(c, path)
+		serveGateMCPFile(c, path, targetOS)
 		return
 	}
 
@@ -48,7 +47,7 @@ func serveGateMCPBinary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("计算 Gate MCP 源码摘要失败：%v", err)})
 		return
 	}
-	cache := filepath.Join(os.TempDir(), fmt.Sprintf("agentflow-gate-mcp-download-%s-%s-%s", targetOS, targetArch, sourceHash[:16]))
+	cache := filepath.Join(os.TempDir(), fmt.Sprintf("agentflow-gate-mcp-download-%s-%s-%s%s", targetOS, targetArch, sourceHash[:16], executableSuffix(targetOS)))
 	if info, err := os.Stat(cache); err != nil || info.IsDir() || info.Size() == 0 {
 		tmp, err := os.CreateTemp(os.TempDir(), ".agentflow-gate-mcp-build-*")
 		if err != nil {
@@ -71,9 +70,9 @@ func serveGateMCPBinary(c *gin.Context) {
 		}
 		log.Printf("built gate MCP binary %s/%s at %s", targetOS, targetArch, cache)
 	}
-	serveGateMCPFile(c, cache)
+	serveGateMCPFile(c, cache, targetOS)
 }
 
-func serveGateMCPFile(c *gin.Context, path string) {
-	serveBinaryArtifact(c, path, "agentflow-gate-mcp")
+func serveGateMCPFile(c *gin.Context, path, targetOS string) {
+	serveBinaryArtifact(c, path, "agentflow-gate-mcp"+executableSuffix(targetOS))
 }

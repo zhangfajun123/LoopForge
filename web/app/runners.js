@@ -109,6 +109,14 @@ function renderRunnersView(){
     const text=$('#bindCliCommand')?.innerText||'';
     runnerCopyCommand(copyBtn,text,'已复制，10 分钟内有效');
   };
+  // Windows 执行机用 PowerShell 安装器；命令文本在渲染时生成，绑定码刷新后自动更新。
+  const windowsOrigin=location.protocol==='https:'?httpsOrigin:httpOrigin;
+  const windowsCommand=$('#bindWindowsCommand');
+  if(windowsCommand){
+    windowsCommand.textContent=`iwr -UseBasicParsing ${windowsOrigin}/runners/install.ps1 -OutFile $env:TEMP\loopforge-bind-cli.ps1; powershell -ExecutionPolicy Bypass -File $env:TEMP\loopforge-bind-cli.ps1 -Server ${windowsOrigin} -Token ${state.runnerBindCode?.code||'<绑定码>'} -Service`;
+  }
+  const copyWindowsBtn=$('#copyBindWindowsCommand');
+  if(copyWindowsBtn)copyWindowsBtn.onclick=()=>runnerCopyCommand(copyWindowsBtn,windowsCommand?.textContent||'','已复制，10 分钟内有效');
   const uninstallHTTPS=$('#uninstallHttpsOrigin'),uninstallHTTP=$('#uninstallHttpOrigin');
   if(uninstallHTTPS)uninstallHTTPS.textContent=httpsOrigin;if(uninstallHTTP)uninstallHTTP.textContent=httpOrigin;
   const copyUnBtn=$('#copyUninstallCommand');

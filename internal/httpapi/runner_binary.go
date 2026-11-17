@@ -38,13 +38,12 @@ func serveRunnerBinary(c *gin.Context) {
 	}
 
 	if pattern := strings.TrimSpace(os.Getenv("AGENTFLOW_RUNNER_BINARY")); pattern != "" {
-		path := strings.ReplaceAll(strings.ReplaceAll(pattern, "{os}", targetOS), "{arch}", targetArch)
-		info, err := os.Stat(path)
-		if err != nil || info.IsDir() || info.Size() == 0 {
+		path, ok := resolveDeployedBinary(strings.ReplaceAll(strings.ReplaceAll(pattern, "{os}", targetOS), "{arch}", targetArch), targetOS)
+		if !ok {
 			c.JSON(http.StatusNotFound, map[string]string{"error": fmt.Sprintf("runner binary %s/%s is not deployed", targetOS, targetArch)})
 			return
 		}
-		serveRunnerArtifact(c, path)
+		serveRunnerArtifact(c, path, targetOS)
 		return
 	}
 
@@ -60,7 +59,7 @@ func serveRunnerBinary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("计算 runner 源码摘要失败：%v", err)})
 		return
 	}
-	cache := filepath.Join(os.TempDir(), fmt.Sprintf("agentflow-runner-%s-%s-%s", targetOS, targetArch, sourceHash[:16]))
+	cache := filepath.Join(os.TempDir(), fmt.Sprintf("agentflow-runner-%s-%s-%s%s", targetOS, targetArch, sourceHash[:16], executableSuffix(targetOS)))
 	if info, err := os.Stat(cache); err != nil || info.IsDir() || info.Size() == 0 {
 		tmp, err := os.CreateTemp(os.TempDir(), ".agentflow-runner-build-*")
 		if err != nil {
@@ -83,11 +82,39 @@ func serveRunnerBinary(c *gin.Context) {
 		}
 		log.Printf("built runner binary %s/%s at %s", targetOS, targetArch, cache)
 	}
-	serveRunnerArtifact(c, cache)
+	serveRunnerArtifact(c, cache, targetOS)
 }
 
-func serveRunnerArtifact(c *gin.Context, path string) {
-	serveBinaryArtifact(c, path, "agentflow-runner")
+func serveRunnerArtifact(c *gin.Context, path, targetOS string) {
+	serveBinaryArtifact(c, path, "agentflow-runner"+executableSuffix(targetOS))
+}
+
+// resolveDeployedBinary prefers the exact deployed path and falls back to the
+// same path with a .exe suffix, so a Windows bundle may be laid out either as
+// `{os}/{arch}/agentflow-runner` or `{os}/{arch}/agentflow-runner.exe`.
+func resolveDeployedBinary(path, targetOS string) (string, bool) {
+	if executableFileAvailable(path) {
+		return path, true
+	}
+	if targetOS == "windows" && !strings.EqualFold(filepath.Ext(path), ".exe") {
+		if candidate := path + ".exe"; executableFileAvailable(candidate) {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func executableFileAvailable(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Size() > 0
+}
+
+// executableSuffix is the extension Windows requires for a runnable image.
+func executableSuffix(targetOS string) string {
+	if targetOS == "windows" {
+		return ".exe"
+	}
+	return ""
 }
 
 // binaryDownloadPlatform reads the os/arch query parameters shared by the
@@ -104,9 +131,9 @@ func binaryDownloadPlatform(c *gin.Context) (targetOS, targetArch string, ok boo
 		targetArch = "amd64"
 	}
 	switch targetOS {
-	case "darwin", "linux":
+	case "darwin", "linux", "windows":
 	default:
-		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported os %q (darwin, linux)", targetOS)})
+		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported os %q (darwin, linux, windows)", targetOS)})
 		return "", "", false
 	}
 	switch targetArch {

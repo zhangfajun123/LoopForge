@@ -261,17 +261,13 @@ func preparationCommand(node domain.WorkflowNode, repo *domain.RepositoryContext
 		script = node.Command
 	}
 	if node.ScriptLanguage == "python" && node.Type != "command" {
-		script = "python3 -c " + preparationQuote(script)
+		script = pythonInlineScript(script)
 	}
 	scope := node.ExecutionScope
 	if scope == "" {
 		scope = domain.ExecutionScopeRun
 	}
-	prefix := "export AGENTFLOW_WORKSPACE=\"$PWD\"\nexport AGENTFLOW_EXECUTION_SCOPE=" + preparationQuote(scope) + "\n"
-	if repo != nil {
-		prefix += "export AGENTFLOW_REPOSITORY_ID=" + preparationQuote(repo.RepositoryID) + "\nexport AGENTFLOW_REPOSITORY_NAME=" + preparationQuote(repo.Name) + "\nexport AGENTFLOW_REPOSITORY_DIR=" + preparationQuote(repo.WorkspaceDir) + "\ncd -- " + preparationQuote(repo.WorkspaceDir) + " || exit $?\n"
-	}
-	return prefix + script
+	return preparationScript(script, scope, repo)
 }
 
 // EnsureWorkspacePreparation replays the explicitly selected, previously
@@ -354,7 +350,7 @@ func EnsureWorkspacePreparation(ctx context.Context, sb Sandbox, wf domain.Workf
 		emit(node, "started", "正在恢复工作区环境："+node.Name)
 		var output string
 		execute := func(repo *domain.RepositoryContext) error {
-			raw, execErr := sb.Exec(ctx, CommandSpec{Argv: []string{"sh", "-lc", preparationCommand(node, repo)}, Provider: "script", CredentialBindings: []CredentialBinding{BindGit, BindMCP}}, nil)
+			raw, execErr := sb.Exec(ctx, CommandSpec{Argv: ShellCommand(preparationCommand(node, repo)), Provider: "script", CredentialBindings: []CredentialBinding{BindGit, BindMCP}}, nil)
 			output = tailAtRuneBoundary(output+redactPreparationOutput(sb, raw), preparationOutputLimit)
 			return execErr
 		}

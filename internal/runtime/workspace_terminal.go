@@ -9,12 +9,9 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
-	"github.com/creack/pty"
-	"golang.org/x/sys/unix"
 )
 
 // TerminalPool owns transient PTYs on the machine that owns the workspace.
@@ -27,7 +24,7 @@ type TerminalPool struct {
 type workspaceTerminal struct {
 	mu      sync.Mutex
 	scope   string
-	file    *os.File
+	session terminalSession
 	cmd     *exec.Cmd
 	home    string
 	output  []byte
@@ -54,7 +51,8 @@ func (p *TerminalPool) Handle(root, scope string, req domain.WorkspaceTerminalRe
 		if err != nil {
 			return nil, "", err
 		}
-		cmd := exec.Command("/bin/sh", "-c", terminalShellLaunch)
+		argv := terminalShellArgv(terminalShellLaunch)
+		cmd := exec.Command(argv[0], argv[1:]...)
 		cmd.Dir = root
 		cmd.Env = terminalBaseEnvironment(home)
 		return cmd, home, nil
@@ -142,20 +140,21 @@ func (p *TerminalPool) handle(scope string, req domain.WorkspaceTerminalRequest,
 			_ = removeTerminalHome(home)
 			return TerminalResult{}, err
 		}
-		file, err := pty.StartWithSize(cmd, terminalSize(req))
+		cols, rows := terminalDimensions(req)
+		session, err := startTerminalSession(cmd, cols, rows)
 		if err != nil {
 			_ = removeTerminalHome(home)
 			return TerminalResult{}, err
 		}
 		id := hex.EncodeToString(random)
-		s := &workspaceTerminal{scope: scope, file: file, cmd: cmd, home: home, done: make(chan struct{}), release: release}
+		s := &workspaceTerminal{scope: scope, session: session, cmd: cmd, home: home, done: make(chan struct{}), release: release}
 		p.sessions[id] = s
 		s.timer = time.AfterFunc(ttl, func() { p.close(id) })
 		go func() {
 			defer close(s.done)
 			buf := make([]byte, 8192)
 			for {
-				n, err := file.Read(buf)
+				n, err := session.Read(buf)
 				if n > 0 {
 					s.mu.Lock()
 					if len(s.output)+n > 256*1024 {
@@ -198,7 +197,7 @@ func (p *TerminalPool) handle(scope string, req domain.WorkspaceTerminalRequest,
 			return TerminalResult{}, fmt.Errorf("终端输入过长")
 		}
 		written := make(chan error, 1)
-		go func() { _, err := s.file.Write([]byte(req.Data)); written <- err }()
+		go func() { _, err := s.session.Write([]byte(req.Data)); written <- err }()
 		select {
 		case err := <-written:
 			if err != nil {
@@ -210,7 +209,8 @@ func (p *TerminalPool) handle(scope string, req domain.WorkspaceTerminalRequest,
 		}
 
 	case "resize":
-		if err := pty.Setsize(s.file, terminalSize(req)); err != nil {
+		cols, rows := terminalDimensions(req)
+		if err := resizeTerminalSession(s.session, cols, rows); err != nil {
 			return TerminalResult{}, err
 		}
 	case "close":
@@ -236,27 +236,19 @@ func terminalTTL(req domain.WorkspaceTerminalRequest) (time.Duration, error) {
 	return ttl, nil
 }
 
-func terminalSize(req domain.WorkspaceTerminalRequest) *pty.Winsize {
-	cols, rows := req.Cols, req.Rows
-	if cols < 20 || cols > 500 {
-		cols = 100
+func terminalDimensions(req domain.WorkspaceTerminalRequest) (cols, rows uint16) {
+	columns, lines := req.Cols, req.Rows
+	if columns < 20 || columns > 500 {
+		columns = 100
 	}
-	if rows < 5 || rows > 200 {
-		rows = 30
+	if lines < 5 || lines > 200 {
+		lines = 30
 	}
-	return &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)}
+	return uint16(columns), uint16(lines)
 }
 func (s *workspaceTerminal) stop() {
 	s.once.Do(func() {
-		fg, _ := unix.IoctlGetInt(int(s.file.Fd()), unix.TIOCGPGRP)
-		// Closing the controlling PTY also hangs up the foreground process group.
-		syscall.Kill(-s.cmd.Process.Pid, syscall.SIGHUP)
-		s.file.Close()
-		time.Sleep(100 * time.Millisecond)
-		if fg > 0 {
-			syscall.Kill(-fg, syscall.SIGKILL)
-		}
-		syscall.Kill(-s.cmd.Process.Pid, syscall.SIGKILL)
+		stopTerminalSession(s.session, s.cmd)
 		if s.release != nil {
 			s.release()
 		}

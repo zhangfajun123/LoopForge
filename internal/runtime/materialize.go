@@ -304,17 +304,10 @@ func replaceRelativeSymlink(path, target string) error {
 	if filepath.IsAbs(target) {
 		return fmt.Errorf("AgentFlow link target must be relative: %s", target)
 	}
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode()&os.ModeSymlink == 0 {
-			return fmt.Errorf("Agent binding path is not a symlink: %s", path)
-		}
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
+	if err := clearMaterializedLink(path); err != nil {
 		return err
 	}
-	return os.Symlink(target, path)
+	return materializeRelativeLink(path, target)
 }
 
 // EnsureControlRoot validates the only repository-adjacent directory the

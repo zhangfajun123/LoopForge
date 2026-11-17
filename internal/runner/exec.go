@@ -9,10 +9,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
@@ -282,7 +280,7 @@ func (d *Daemon) executeProcess(ctx context.Context, task domain.RunnerTask, arg
 		return execResult{status: domain.RunnerTaskFailed, errMsg: fmt.Sprintf("workspace %s: %v", dir, err)}
 	}
 
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := platformCommandContext(context.Background(), argv)
 	cmd.Dir = dir
 	// Agent CLI credentials live in the user environment on this machine;
 	// the platform additionally injects task-scoped credentials (currently
@@ -461,45 +459,6 @@ func asExitError(err error, target **exec.ExitError) bool {
 		return true
 	}
 	return false
-}
-
-// setProcessGroup puts the CLI and all of its children into a new process
-// group so a cancel cannot leave orphaned shells or MCP servers behind.
-func setProcessGroup(cmd *exec.Cmd) {
-	if runtime.GOOS == "windows" {
-		return
-	}
-	if cmd.SysProcAttr == nil {
-		cmd.SysProcAttr = &syscall.SysProcAttr{}
-	}
-	cmd.SysProcAttr.Setpgid = true
-}
-
-// terminateProcessGroup sends SIGTERM to the whole group, waits a grace
-// period, then escalates to SIGKILL.
-// processDone belongs to the single Wait caller; termination must not reap it.
-func terminateProcessGroup(cmd *exec.Cmd, processDone <-chan struct{}) {
-	select {
-	case <-processDone:
-		return
-	default:
-	}
-	if cmd.Process == nil {
-		return
-	}
-	if runtime.GOOS == "windows" {
-		_ = cmd.Process.Kill()
-		return
-	}
-	pgid := -cmd.Process.Pid
-	_ = syscall.Kill(pgid, syscall.SIGTERM)
-	timer := time.NewTimer(cancelGrace)
-	defer timer.Stop()
-	select {
-	case <-processDone:
-	case <-timer.C:
-		_ = syscall.Kill(pgid, syscall.SIGKILL)
-	}
 }
 
 func upsertProcessEnv(env []string, key, value string) []string {

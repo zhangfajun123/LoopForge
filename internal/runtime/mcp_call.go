@@ -77,11 +77,11 @@ func PrepareMCPCall(sandbox Sandbox, workspace string, servers []domain.MCPServe
 	if err := writeManagedFile(workspace, configHost, raw, 0o600); err != nil {
 		return nil, fmt.Errorf("write mcp call config: %w", err)
 	}
-	helperHost := filepath.Join(hostBin, "agentflow-helper")
+	helperHost := filepath.Join(hostBin, mcpCallHelperName())
 	if err := installMCPCallHelper(workspace, helperHost); err != nil {
 		return nil, err
 	}
-	wrapperHost := filepath.Join(hostBin, "agentflow")
+	wrapperHost := filepath.Join(hostBin, mcpCallWrapperName())
 	self, _ := os.Executable()
 	helperExec := helperHost
 	configEnv := configHost
@@ -98,10 +98,15 @@ func PrepareMCPCall(sandbox Sandbox, workspace string, servers []domain.MCPServe
 	if err := writeManagedFile(workspace, wrapperHost, []byte(mcpCallWrapperScript(helperExec, fallback)), 0o700); err != nil {
 		return nil, fmt.Errorf("write mcp call wrapper: %w", err)
 	}
-	return map[string]string{
+	environment := map[string]string{
 		mcpCallConfigEnv: configEnv,
 		mcpCallBinEnv:    wrapperEnv,
-	}, nil
+	}
+	// A POSIX shell finds `agentflow` through the function preamble that
+	// BindMCPCallArgv injects. PowerShell has no equivalent function hook here,
+	// so Windows resolves the wrapper by putting its directory on PATH.
+	mcpCallPathOverlay(environment, hostBin)
+	return environment, nil
 }
 
 // mcpCallConfigServers converts runtime MCP server definitions into the
@@ -137,24 +142,6 @@ func mcpCallConfigServers(servers []domain.MCPServerDefinition) []mcpCallServer 
 		})
 	}
 	return out
-}
-
-func mcpCallWrapperScript(helperPath, fallback string) string {
-	var b strings.Builder
-	b.WriteString("#!/bin/sh\n")
-	if strings.TrimSpace(helperPath) != "" {
-		b.WriteString("if [ -x " + shellSingleQuote(helperPath) + " ]; then\n")
-		b.WriteString("  exec " + shellSingleQuote(helperPath) + " \"$@\"\n")
-		b.WriteString("fi\n")
-	}
-	if strings.TrimSpace(fallback) != "" {
-		b.WriteString("if [ -x " + shellSingleQuote(fallback) + " ]; then\n")
-		b.WriteString("  exec " + shellSingleQuote(fallback) + " \"$@\"\n")
-		b.WriteString("fi\n")
-	}
-	b.WriteString("echo \"agentflow: mcp helper is not available in this sandbox\" >&2\n")
-	b.WriteString("exit 127\n")
-	return b.String()
 }
 
 func installMCPCallHelper(workspace, dest string) error {

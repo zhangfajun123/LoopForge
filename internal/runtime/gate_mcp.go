@@ -35,7 +35,7 @@ func materializeGateMCP(workspace, configRoot, binaryRel, resultPath, driver str
 	if err != nil {
 		return domain.MCPServerDefinition{}, fmt.Errorf("read gate MCP binary: %w", err)
 	}
-	binaryPath := filepath.Join(configRoot, "gate-mcp")
+	binaryPath := filepath.Join(configRoot, "gate-mcp"+executableExtension(targetOS))
 	if err := writeManagedFile(workspace, binaryPath, raw, 0o700); err != nil {
 		return domain.MCPServerDefinition{}, err
 	}
@@ -43,7 +43,7 @@ func materializeGateMCP(workspace, configRoot, binaryRel, resultPath, driver str
 		ID:        gateMCPServerID,
 		Name:      "LoopForge Gate",
 		Transport: "stdio",
-		Command:   filepath.ToSlash(binaryRel),
+		Command:   filepath.ToSlash(binaryRel + executableExtension(targetOS)),
 		Environment: map[string]string{
 			"AGENTFLOW_GATE_RESULT_PATH": resultPath,
 		},
@@ -55,7 +55,9 @@ func materializeGateMCP(workspace, configRoot, binaryRel, resultPath, driver str
 // cache the small helper on demand. A sidecar next to the current executable
 // is also accepted so installed runner machines need no Go toolchain.
 func resolveGateMCPBinary(targetOS, targetArch string) (string, error) {
-	if targetOS != "darwin" && targetOS != "linux" {
+	switch targetOS {
+	case "darwin", "linux", "windows":
+	default:
 		return "", fmt.Errorf("unsupported gate MCP operating system %q", targetOS)
 	}
 	if targetArch != "amd64" && targetArch != "arm64" {
@@ -66,13 +68,16 @@ func resolveGateMCPBinary(targetOS, targetArch string) (string, error) {
 		if validExecutableFile(path) {
 			return path, nil
 		}
+		if targetOS == "windows" && !strings.EqualFold(filepath.Ext(path), ".exe") && validExecutableFile(path+".exe") {
+			return path + ".exe", nil
+		}
 		return "", fmt.Errorf("gate MCP binary %s/%s is not deployed at %s", targetOS, targetArch, path)
 	}
 	if executable, err := os.Executable(); err == nil {
 		dir := filepath.Dir(executable)
 		for _, name := range []string{
-			fmt.Sprintf("agentflow-gate-mcp-%s-%s", targetOS, targetArch),
-			"agentflow-gate-mcp",
+			fmt.Sprintf("agentflow-gate-mcp-%s-%s%s", targetOS, targetArch, executableExtension(targetOS)),
+			"agentflow-gate-mcp" + executableExtension(targetOS),
 		} {
 			path := filepath.Join(dir, name)
 			if validExecutableFile(path) && (name != "agentflow-gate-mcp" || targetOS == goruntime.GOOS && targetArch == goruntime.GOARCH) {
@@ -86,7 +91,7 @@ func resolveGateMCPBinary(targetOS, targetArch string) (string, error) {
 	}
 	gateMCPBuildMu.Lock()
 	defer gateMCPBuildMu.Unlock()
-	cache := filepath.Join(os.TempDir(), fmt.Sprintf("agentflow-gate-mcp-%s-%s", targetOS, targetArch))
+	cache := filepath.Join(os.TempDir(), fmt.Sprintf("agentflow-gate-mcp-%s-%s%s", targetOS, targetArch, executableExtension(targetOS)))
 	if !buildArtifactFresh(cache, root) {
 		build := exec.Command("go", "build", "-o", cache, "./cmd/agentflow-gate-mcp")
 		build.Dir = root
@@ -101,6 +106,14 @@ func resolveGateMCPBinary(targetOS, targetArch string) (string, error) {
 
 func expandPlatformPath(pattern, targetOS, targetArch string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(pattern, "{os}", targetOS), "{arch}", targetArch)
+}
+
+// executableExtension is the suffix a platform requires for a runnable image.
+func executableExtension(targetOS string) string {
+	if targetOS == "windows" {
+		return ".exe"
+	}
+	return ""
 }
 
 func validExecutableFile(path string) bool {

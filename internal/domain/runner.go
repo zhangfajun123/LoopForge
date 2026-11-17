@@ -81,6 +81,10 @@ const RunnerVersionConversationWorkspace = "0.8.0"
 // queued CLI or block a following turn behind a previous background save.
 const RunnerVersionConversationCLI = "0.10.1"
 
+// RunnerVersionWindows is the first runner release that runs on Windows in a
+// local sandbox (PowerShell scripts, pipe-backed terminal, staged update).
+const RunnerVersionWindows = "0.11.0"
+
 func (r Runner) SupportsConversationCLI() bool {
 	return versionAtLeast(r.RunnerVersion, RunnerVersionConversationCLI)
 }

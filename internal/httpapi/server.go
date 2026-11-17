@@ -606,6 +606,7 @@ func newWithNotifications(s *repo.Store, e *engine.Engine, syncSvc *tracker.Serv
 	// login. Public install assets are read-only; daemon APIs authenticate with
 	// one-time bind codes or runner session tokens instead of a user identity.
 	g.GET("/runners/install.sh", serveBindCLIScript)
+	g.GET("/runners/install.ps1", serveBindCLIScriptPS1)
 	g.GET("/runners/agentflow-runner", serveRunnerBinary)
 	g.GET("/runners/agentflow-gate-mcp", serveGateMCPBinary)
 	g.GET("/runners/health", api.health)
@@ -624,6 +625,7 @@ func newWithNotifications(s *repo.Store, e *engine.Engine, syncSvc *tracker.Serv
 	g.PUT("/runners/previews/:previewId/content", api.runners.runnerPreviewContent)
 	g.POST("/runners/previews/:previewId/complete", api.runners.runnerPreviewComplete)
 	g.GET("/deploy/bind-cli.sh", serveBindCLIScript)
+	g.GET("/deploy/bind-cli.ps1", serveBindCLIScriptPS1)
 	g.GET("/deploy/agentflow-runner", serveRunnerBinary)
 	g.GET("/deploy/agentflow-gate-mcp", serveGateMCPBinary)
 	mcpHandler := mcpserver.New(mcpserver.LocalInvoker{Handler: g}).HTTPHandler()
@@ -680,6 +682,19 @@ func serveBindCLIScript(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", "text/x-shellscript; charset=utf-8")
+	c.Header("Cache-Control", "no-store")
+	_, _ = c.Writer.Write(script)
+}
+
+// serveBindCLIScriptPS1 serves the PowerShell installer for Windows execution
+// machines. It is plain text so browsers and iwr can save it without prompting.
+func serveBindCLIScriptPS1(c *gin.Context) {
+	script := deployassets.BindCLIScriptPS1()
+	if len(script) == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Content-Type", "text/plain; charset=utf-8")
 	c.Header("Cache-Control", "no-store")
 	_, _ = c.Writer.Write(script)
 }

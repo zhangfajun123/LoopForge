@@ -146,12 +146,34 @@ func (e *Engine) requireWorkBranchCapabilities(runnerID string, repositories []d
 	return nil
 }
 
+// requireSandboxDriverSupport refuses a run whose sandbox the selected machine
+// cannot implement. A Windows runner has no native lightweight sandbox
+// (seatbelt/bwrap are POSIX-only); failing here keeps the task from being
+// queued and only failing once it reaches the machine. Docker stays with the
+// runner, which reports its own readable error when the daemon is unavailable.
+func (e *Engine) requireSandboxDriverSupport(runnerID string, profile domain.SandboxProfile) error {
+	if runnerID == "" {
+		return nil
+	}
+	runner, ok := e.repo.Runner(runnerID)
+	if !ok {
+		return nil
+	}
+	if _, err := domain.ResolveSandboxDriver(profile.Driver, runner.OS); err != nil {
+		return fmt.Errorf("%w；请改用 local 或 docker 沙箱", err)
+	}
+	return nil
+}
+
 func (e *Engine) runnerSandboxSpec(run domain.Run) (*domain.RunnerSandboxSpec, error) {
 	if err := e.requireWorkBranchCapabilities(e.defaultExecutionRunner(run), run.RepositoryContexts()); err != nil {
 		return nil, err
 	}
 	profile, resources, err := e.workspaceSandboxProfile(run)
 	if err != nil {
+		return nil, err
+	}
+	if err := e.requireSandboxDriverSupport(e.defaultExecutionRunner(run), profile); err != nil {
 		return nil, err
 	}
 	spec := resolvedSandboxSnapshot(profile, resources)

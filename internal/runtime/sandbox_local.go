@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 )
 
 type localSandbox struct {
@@ -47,6 +46,7 @@ func (s *localSandbox) command(ctx context.Context, command CommandSpec, base []
 	if err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("sandbox workspace missing %s: %w", workspace, err)
 	}
+	command.Argv = NormalizeShellCommand(command.Argv)
 	cmd := exec.CommandContext(ctx, command.Argv[0], command.Argv[1:]...)
 	cmd.Dir = workspace
 	cmd.Env = appendEnvironment(base, s.environment, command.environment)
@@ -58,13 +58,8 @@ func (s *localSandbox) command(ctx context.Context, command CommandSpec, base []
 		cmd.Env = upsertEnv(cmd.Env, "PWD", command.WorkingDir)
 	}
 	if command.OwnProcessGroup {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Cancel = func() error {
-			if cmd.Process == nil {
-				return nil
-			}
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
+		configureProcessGroup(cmd)
+		configureCommandCancel(cmd)
 	}
 	return cmd, nil
 }
@@ -87,7 +82,10 @@ func ExecuteLocalCommand(ctx context.Context, workspace string, command CommandS
 		for key, value := range command.environment {
 			env[key] = value
 		}
-		env["HOME"] = root
+		root = filepath.Clean(root)
+		for key, value := range privateHomeEnvironment(root) {
+			env[key] = value
+		}
 		env["TMPDIR"] = filepath.Join(root, "tmp")
 		command.environment = env
 		if err := os.MkdirAll(command.environment["TMPDIR"], 0o700); err != nil {

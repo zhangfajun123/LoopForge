@@ -141,8 +141,16 @@ func (d *Daemon) checkForUpdate(ctx context.Context, binary string) error {
 	} else if current != localHash {
 		return errors.New("runner executable changed during update")
 	}
-	if err := os.Rename(tmp, binary); err != nil {
+	installed, err := installUpdatedExecutable(tmp, binary)
+	if err != nil {
 		return fmt.Errorf("replace runner executable: %w", err)
+	}
+	if !installed {
+		// Windows cannot replace the image a running process was started from.
+		// The verified download is staged next to the executable; the service
+		// wrapper applies it when the daemon next starts.
+		log.Printf("runner update staged (%s); it will be applied on next start", metadata.SHA256[:12])
+		return nil
 	}
 	d.updateReady.Store(true)
 	log.Printf("runner update installed (%s); restarting", metadata.SHA256[:12])

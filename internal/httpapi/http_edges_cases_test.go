@@ -47,8 +47,11 @@ func TestGateMCPBinaryConfiguredArtifactAndErrors(t *testing.T) {
 		serveGateMCPBinary(c)
 		return rec.Code, rec.Body.String()
 	}
-	if code, _ := run("os=windows&arch=amd64"); code != http.StatusBadRequest {
+	if code, _ := run("os=freebsd&arch=amd64"); code != http.StatusBadRequest {
 		t.Fatalf("unsupported OS=%d", code)
+	}
+	if code, _ := run("os=windows&arch=amd64"); code != http.StatusNotFound {
+		t.Fatalf("missing windows artifact=%d", code)
 	}
 	if code, _ := run("os=linux&arch=mips"); code != http.StatusBadRequest {
 		t.Fatalf("unsupported arch=%d", code)

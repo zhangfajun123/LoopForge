@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"agentflow/internal/runner"
@@ -60,7 +59,7 @@ func main() {
 	}
 	log.Printf("agentflow-runner %s connecting to %s (concurrency=%d)", runner.Version(), cfg.ServerURL, cfg.MaxConcurrency)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), restartSignals()...)
 	defer stop()
 	if err := daemon.Run(ctx); errors.Is(err, runner.ErrUpdateReady) {
 		binary, exeErr := os.Executable()
@@ -68,7 +67,7 @@ func main() {
 			log.Fatal("locate updated runner: ", exeErr)
 		}
 		log.Printf("restarting updated runner")
-		if exeErr := syscall.Exec(binary, os.Args, os.Environ()); exeErr != nil {
+		if exeErr := restartRunner(binary); exeErr != nil {
 			log.Fatal("restart updated runner: ", exeErr)
 		}
 	} else if err != nil {

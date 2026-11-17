@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -45,8 +44,8 @@ func runCommand(cmd *exec.Cmd, sink EventSink) (string, error) {
 	if err != nil && cmd.Process == nil {
 		err = fmt.Errorf("%w: %w", errProcessNotStarted, err)
 	}
-	if cmd.Process != nil && cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if cmd.Process != nil && cmd.SysProcAttr != nil && reportsOwnProcessGroup(cmd) {
+		killProcessGroup(cmd, true)
 	}
 	outputIncomplete := errors.Is(err, exec.ErrWaitDelay)
 	if errors.Is(err, exec.ErrWaitDelay) {
@@ -63,11 +62,8 @@ func runCommand(cmd *exec.Cmd, sink EventSink) (string, error) {
 		if state := cmd.ProcessState; state != nil {
 			attrs["pid"], attrs["exitCode"] = state.Pid(), state.ExitCode()
 			attrs["userCpuMs"], attrs["systemCpuMs"] = state.UserTime().Milliseconds(), state.SystemTime().Milliseconds()
-			if status, ok := state.Sys().(interface {
-				Signaled() bool
-				Signal() syscall.Signal
-			}); ok && status.Signaled() {
-				attrs["signal"] = status.Signal().String()
+			if signal, ok := exitStatusSignal(state); ok {
+				attrs["signal"] = signal
 			}
 		}
 		sink(domain.TelemetryEvent{Category: "process", Name: "process.finished", Timestamp: time.Now().UTC(), Phase: phase, Level: level, Message: commandResult(err), Attributes: attrs})

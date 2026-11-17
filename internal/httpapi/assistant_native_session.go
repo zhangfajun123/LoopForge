@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"agentflow/internal/domain"
 	"agentflow/internal/runtime"
@@ -66,12 +65,14 @@ func openAssistantNativeSession(req assistantRequest, saved domain.AssistantSess
 	if err != nil {
 		return nil, err
 	}
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	locked, err := runtime.TryLockFile(lock)
+	if err != nil {
 		_ = lock.Close()
-		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
-			return nil, errAssistantNativeBusy
-		}
 		return nil, err
+	}
+	if !locked {
+		_ = lock.Close()
+		return nil, errAssistantNativeBusy
 	}
 	native := &assistantNativeSession{root: root, lock: lock}
 	if data, err := os.ReadFile(filepath.Join(root, "session.json")); err == nil {
@@ -109,7 +110,7 @@ func openAssistantNativeSession(req assistantRequest, saved domain.AssistantSess
 
 func (n *assistantNativeSession) Close() {
 	if n != nil && n.lock != nil {
-		_ = syscall.Flock(int(n.lock.Fd()), syscall.LOCK_UN)
+		_ = runtime.UnlockFile(n.lock)
 		_ = n.lock.Close()
 		n.lock = nil
 	}

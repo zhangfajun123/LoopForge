@@ -57,10 +57,15 @@ printf 'Building with %s parallel jobs\n' "$jobs"
 if [[ $mode != platform ]]; then
   printf '\nBuilding agentflow-mcp and loopforge-account for the platform…\n'
   build '' ./cmd/agentflow-mcp ./cmd/loopforge-account
-  for target_os in linux darwin; do
+  for target_os in linux darwin windows; do
     for target_arch in amd64 arm64; do
       printf '\nBuilding agentflow-runner and agentflow-gate-mcp (%s/%s)…\n' "$target_os" "$target_arch"
-      GOOS="$target_os" GOARCH="$target_arch" build "-$target_os-$target_arch" ./cmd/agentflow-runner ./cmd/agentflow-gate-mcp
+      # Windows downloads must keep the .exe suffix: bind-cli.ps1 saves the
+      # response under exactly the name the server reports in
+      # Content-Disposition.
+      suffix="-$target_os-$target_arch"
+      [[ $target_os == windows ]] && suffix+=".exe"
+      GOOS="$target_os" GOARCH="$target_arch" build "$suffix" ./cmd/agentflow-runner ./cmd/agentflow-gate-mcp
     done
   done
 fi

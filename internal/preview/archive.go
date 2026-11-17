@@ -15,7 +15,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -213,7 +212,7 @@ func rejectSpecial(path string, info os.FileInfo) error {
 	if info.IsDir() {
 		return nil
 	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Nlink > 1 {
+	if hasMultipleHardlinks(info) {
 		return fmt.Errorf("%w: hardlink %s", ErrUnsupportedEntry, path)
 	}
 	return nil

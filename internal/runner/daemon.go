@@ -129,6 +129,13 @@ func New(cfg Config) (*Daemon, error) {
 		host, _ := os.Hostname()
 		cfg.Name = host
 	}
+	if goruntime.GOOS == "windows" && cfg.ManagedCLIRoot != "" {
+		// Managed CLI coordination relies on Unix process groups and lock
+		// files. Windows runners keep ordinary PATH discovery instead of
+		// refusing to start over an optional feature.
+		log.Printf("runner: managed CLI coordination is unavailable on Windows; AGENTFLOW_MANAGED_CLI_ROOT is ignored and installed CLIs are discovered from PATH")
+		cfg.ManagedCLIRoot = ""
+	}
 	return &Daemon{cfg: cfg, client: NewClient(cfg.ServerURL), executor: runtime.NewExecutorRunner(), controls: map[string]chan string{}, pendingControls: map[string]string{}}, nil
 }
 
@@ -708,9 +715,9 @@ func (d *Daemon) taskWorkspace(task domain.RunnerTask) string {
 	return filepath.Join(d.cfg.DefaultWorkspaceRoot, filepath.FromSlash(ws))
 }
 
-// executeTerminal runs a command task (`sh -lc <command>`) in the task
-// workspace. This is the remote-terminal capability used by workflow scripts
-// and verification gates.
+// executeTerminal runs a command task in the platform shell (`sh -lc` on Unix,
+// PowerShell on Windows) in the task workspace. This is the remote-terminal
+// capability used by workflow scripts and verification gates.
 func (d *Daemon) executeTerminal(ctx context.Context, task domain.RunnerTask) execResult {
 	workspace := d.taskWorkspace(task)
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
@@ -727,7 +734,7 @@ func (d *Daemon) executeTerminal(ctx context.Context, task domain.RunnerTask) ex
 			return execResult{status: domain.RunnerTaskFailed, errMsg: err.Error()}
 		}
 	}
-	command := runtime.CommandSpec{Argv: []string{"sh", "-lc", task.Command}, Provider: "script"}
+	command := runtime.CommandSpec{Argv: runtime.ShellCommand(task.Command), Provider: "script"}
 	var sandbox runtime.Sandbox
 	if task.Sandbox != nil {
 		var release func()
@@ -1442,7 +1449,7 @@ func (d *Daemon) defaultWorkspace(taskID string) string {
 }
 
 // runnerVersion is reported at registration; it matches the module build.
-var runnerVersion = "0.10.1"
+var runnerVersion = "0.11.0"
 
 // Version returns the runner build version reported at registration.
 func Version() string { return runnerVersion }

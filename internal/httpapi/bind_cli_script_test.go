@@ -43,3 +43,25 @@ func TestBindCLIScriptFetchedOverIntranetStaysFlexible(t *testing.T) {
 		t.Fatal("an intranet install over a bare IP must still be able to fall back to HTTP")
 	}
 }
+func TestBindCLIPSScriptServesPowerShellInstaller(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/runners/install.ps1", nil)
+	serveBindCLIScriptPS1(c)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"param(", "agentflow-runner.exe", "agentflow-gate-mcp.exe", "-Uninstall"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("PowerShell installer missing %q", want)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/plain") {
+		t.Fatalf("content type: %q", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("cache control: %q", got)
+	}
+}

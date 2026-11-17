@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -510,6 +511,9 @@ func parseDockerSandboxMounts(out, absRoot string) map[string]string {
 }
 
 func createDocker(ctx context.Context, id, workspace string, p domain.SandboxProfile, requirements SandboxRequirements, dockerfile domain.DockerfileDefinition) (Sandbox, error) {
+	if goruntime.GOOS == "windows" {
+		return nil, fmt.Errorf("Windows 执行器暂不支持 Docker 沙箱：请改用 local 沙箱执行")
+	}
 	if strings.TrimSpace(dockerfile.Content) == "" {
 		return nil, fmt.Errorf("docker sandbox requires a dockerfile")
 	}

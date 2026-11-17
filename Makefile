@@ -70,3 +70,5 @@ build-gate-mcp:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOCACHE=$(GOCACHE) go build -o bin/agentflow-gate-mcp-darwin-arm64 ./cmd/agentflow-gate-mcp
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOCACHE=$(GOCACHE) go build -o bin/agentflow-gate-mcp-linux-amd64 ./cmd/agentflow-gate-mcp
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOCACHE=$(GOCACHE) go build -o bin/agentflow-gate-mcp-linux-arm64 ./cmd/agentflow-gate-mcp
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 GOCACHE=$(GOCACHE) go build -o bin/agentflow-gate-mcp-windows-amd64.exe ./cmd/agentflow-gate-mcp
+	CGO_ENABLED=0 GOOS=windows GOARCH=arm64 GOCACHE=$(GOCACHE) go build -o bin/agentflow-gate-mcp-windows-arm64.exe ./cmd/agentflow-gate-mcp

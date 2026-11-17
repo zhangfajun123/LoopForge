@@ -748,7 +748,7 @@
       </div>
 
       <div class="runner-onboarding panel">
-        <div class="panel-heading"><h2>接入新机器</h2><span class="runner-platforms">macOS / Linux</span></div>
+        <div class="panel-heading"><h2>接入新机器</h2><span class="runner-platforms">macOS / Linux / Windows</span></div>
         <ol class="runner-steps">
           <li><span class="runner-step-no">1</span><div><b>安装 CLI</b><small>claude / codex 等</small></div></li>
           <li><span class="runner-step-no">2</span><div><b>执行接入命令</b><small>绑定码 10 分钟有效</small></div></li>
@@ -758,6 +758,11 @@
           <pre id="bindCliCommand" class="mono">(curl -fsSL --connect-timeout 5 <span id="bindHttpsOrigin">https://</span>/runners/install.sh || curl -fsSL <span id="bindHttpOrigin">http://</span>/runners/install.sh) | bash -s -- --server <span id="bindServerHost"></span> --token <span id="bindToken">生成中…</span> --service</pre>
           <button id="copyBindCommand" class="button dark small" type="button">复制命令</button>
         </div>
+        <div class="runner-command-box">
+          <pre id="bindWindowsCommand" class="mono"></pre>
+          <button id="copyBindWindowsCommand" class="button ghost small" type="button">复制 PowerShell 命令</button>
+        </div>
+        <p class="runner-command-note"><span aria-hidden="true">i</span>Windows 支持 local 沙箱执行；native 轻量隔离不可用，脚本节点按 PowerShell 语法执行。</p>
         <div class="runner-command-foot">
           <p class="runner-command-note"><span aria-hidden="true">✓</span>仅主动连接平台，不开放本机端口</p>
           <details class="runner-uninstall">

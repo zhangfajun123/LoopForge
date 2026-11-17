@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	goruntime "runtime"
 	"sort"
 	"strings"
@@ -71,21 +70,7 @@ func extraSearchPaths() []string {
 	if err != nil || strings.TrimSpace(home) == "" {
 		return nil
 	}
-	paths := []string{
-		filepath.Join(home, ".local", "bin"),
-		filepath.Join(home, "bin"),
-		"/opt/homebrew/bin",
-		"/usr/local/bin",
-	}
-	// nvm installs Node-based CLIs (codex) under versioned directories.
-	if entries, err := os.ReadDir(filepath.Join(home, ".nvm", "versions", "node")); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				paths = append(paths, filepath.Join(home, ".nvm", "versions", "node", entry.Name(), "bin"))
-			}
-		}
-	}
-	return paths
+	return platformExtraSearchPaths(home)
 }
 
 // lookupCLI resolves a binary name against PATH first, then the common
@@ -95,8 +80,7 @@ func lookupCLI(binary string) (string, bool) {
 		return path, true
 	}
 	for _, dir := range extraSearchPaths() {
-		candidate := filepath.Join(dir, binary)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+		if candidate, ok := lookupExecutableInDir(dir, binary); ok {
 			return candidate, true
 		}
 	}
@@ -194,7 +178,7 @@ func builtinRuntimes() []domain.RunnerRuntime {
 func probeVersion(ctx context.Context, path string, flags []string, environments ...map[string]string) string {
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(probeCtx, path, append(append([]string{}, flags...), "--version")...)
+	cmd := platformCommandContext(probeCtx, append([]string{path}, append(append([]string{}, flags...), "--version")...))
 	if len(environments) > 0 && len(environments[0]) > 0 {
 		cmd.Env = os.Environ()
 		for key, value := range environments[0] {

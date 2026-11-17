@@ -5,9 +5,10 @@ import (
 
 	"agentflow/internal/repo"
 	"bytes"
-
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -114,39 +115,42 @@ func sharedTranscriptPrefix(old []assistantMessage, next []assistantMessage) boo
 	}
 	return true
 }
-// mergeAssistantTranscript reconciles a client transcript with the server's copy
-// instead of demanding an exact prefix. A reader that sent the next question
-// before the previous reply reached its transcript still holds a prefix of the
-// stored transcript, so that case must not fail with 「共享会话已更新」: the
-// server's replies are kept and only the client's new user messages are
-// appended. Any other divergence (a changed user message, a forged assistant
-// reply) is refused.
+// mergeAssistantTranscript reconciles a client transcript with the server's copy.
+// The invariant it protects is **append-only**: a stored message is never edited
+// and never dropped, and the only thing a client may contribute is a new user
+// turn. Positions therefore do not have to line up.
+//
+// Why it is this tolerant, after two production deadlocks:
+//   - The orchestrate panel echoes an assistant turn back as the prose it
+//     rendered (`reply.message`) while the server stored the full JSON draft
+//     content, so a positional comparison of assistant turns can never match.
+//   - The panel keeps only the last 8 messages, so a long conversation starts
+//     mid-transcript and every user message after that point looks "rewritten".
+//
+// Both used to answer 409 「共享会话已更新，请重新打开后发送」 forever — refreshing
+// never changed the stored copy, so the only way out was a new conversation.
+// Now the client's assistant turns are ignored outright (the server owns its
+// replies, so a client can never forge or rewrite one) and its user turns are
+// matched as an in-order subsequence of the stored transcript: already-stored
+// questions are skipped, genuinely new ones are appended at the end.
+// `forged` and `ok` are kept for callers, and no divergence can fail them.
 func mergeAssistantTranscript(old, req []assistantMessage) (merged []assistantMessage, forged bool, ok bool) {
 	matched := 0
-	var pending []assistantMessage
+	pending := make([]assistantMessage, 0, len(req))
 	for _, want := range req {
+		// Assistant turns belong to the server: a client copy is never
+		// authoritative, and this is the only place that would let one in.
+		if want.Role != "user" {
+			continue
+		}
 		for matched < len(old) && !assistantMessageEqual(old[matched], want) {
-			// A reply the reader has not rendered yet may be skipped; a user
-			// message may not, that would be a rewrite of the transcript.
-			if old[matched].Role != "assistant" {
-				return nil, false, false
-			}
 			matched++
 		}
 		if matched < len(old) {
 			matched++
 			continue
 		}
-		if want.Role != "user" {
-			// The client is trying to author an assistant turn itself.
-			return nil, true, false
-		}
 		pending = append(pending, want)
-	}
-	for ; matched < len(old); matched++ {
-		if old[matched].Role != "assistant" {
-			return nil, false, false
-		}
 	}
 	merged = make([]assistantMessage, 0, len(old)+len(pending))
 	merged = append(merged, old...)
@@ -154,10 +158,15 @@ func mergeAssistantTranscript(old, req []assistantMessage) (merged []assistantMe
 	return merged, false, true
 }
 
+// assistantMessageEqual reports whether a client turn is the one already stored.
+//
+// Identity is role + text only. The stored copy carries server-side metadata
+// (AuthorID, AuthorName, CreatedAt, Attachments, …) that a client transcript
+// replayed from the browser never has, so comparing the whole struct could
+// never match: that is what made every shared conversation answer 409
+// 「共享会话已更新，请重新打开后发送」 from its very first user message.
 func assistantMessageEqual(a, b assistantMessage) bool {
-	left, _ := json.Marshal(a)
-	right, _ := json.Marshal(b)
-	return bytes.Equal(left, right)
+	return a.Role == b.Role && strings.TrimSpace(a.Content) == strings.TrimSpace(b.Content)
 }
 
 func assistantRequestApprovalMode(req assistantRequest) string {

@@ -2,6 +2,24 @@ let aiBuildToken = 0;
 let aiBuild = null;
 let aiAbort = null;
 const aiHistory = {};
+// The panel used to keep its conversation in memory only, so every refresh
+// started a brand-new session and the model lost the thread. Keep it in
+// sessionStorage instead: same tab, same conversation id, and the server-side
+// merge tolerates any gap between the two copies.
+const AI_HISTORY_KEY = 'lf.aiOrchestratorHistory';
+function aiHistoryGet(project) {
+  if (!aiHistory[project]) {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(AI_HISTORY_KEY) || '{}');
+      if (saved && saved[project]) aiHistory[project] = saved[project];
+    } catch {}
+  }
+  return aiHistory[project];
+}
+function aiHistorySet(project, value) {
+  if (value) aiHistory[project] = value; else delete aiHistory[project];
+  try { sessionStorage.setItem(AI_HISTORY_KEY, JSON.stringify(aiHistory)); } catch {}
+}
 
 const aiOrchestratorCLIBrands = {codebuddy:'codebuddy', codex:'codex', 'claude-code':'claude', opencode:'opencode', cursor:'cursor', agy:'gemini', kimi:'kimi', pi:'pi', dsh:'deepseek', zcode:'glm', hermes:'hermes'};
 
@@ -356,7 +374,7 @@ function resetAIOrchestrator() {
   aiBuildToken++;
   aiAbort?.abort();
   finishAIBuildVisuals();
-  if (state.projectFilter) delete aiHistory[state.projectFilter];
+  if (state.projectFilter) aiHistorySet(state.projectFilter, null);
   const log = $('#aiOrchestratorLog');
   const intro = $('#aiOrchestratorIntro');
   if (log) {
@@ -962,7 +980,7 @@ async function runAIOrchestrator() {
   const build = await beginAIOrchestration(goal);
   if (!build) return;
   const model = selectedAIOrchestratorModel();
-  const previous = aiHistory[project];
+  const previous = aiHistoryGet(project);
   const history = previous && aiOrchestratorEngine(previous.model) === aiOrchestratorEngine(model) ? previous : {sessionId: '', messages: []};
   build.goal = goal;
   build.referenced = referenced;
@@ -974,7 +992,11 @@ async function runAIOrchestrator() {
   appendOrchestratorNote(goal, 'mine');
   setAIBuildStatus(editing ? '正在按当前流程修改，画布先保持原样' : '正在连接 AI…');
   if (!editing) placeAIGhost();
-  const messages = history.messages.concat([{role: 'user', content: aiOrchestratePrompt(goal, canvas, referenced)}]);
+  // Only user turns are replayed: the server already stores its own replies,
+  // and echoing a rendered copy back was what the transcript merge choked on.
+  const messages = history.messages
+    .filter(item => item.role === 'user')
+    .concat([{role: 'user', content: aiOrchestratePrompt(goal, canvas, referenced)}]);
   aiAbort = new AbortController();
   try {
     const res = await fetch('/api/assistant/chat', {
@@ -990,7 +1012,7 @@ async function runAIOrchestrator() {
     }
     const reply = (res.headers.get('Content-Type') || '').includes('text/event-stream') ? await readAssistantSSE(res, pushAIThought) : await res.json();
     if (build.token !== aiBuildToken) return;
-    aiHistory[project] = {sessionId: reply.sessionId || history.sessionId, model, messages: messages.concat([{role: 'assistant', model, content: reply.message || '已提交草稿'}]).slice(-8)};
+    aiHistorySet(project, {sessionId: reply.sessionId || history.sessionId, model, messages: messages.slice(-8)});
     document.querySelectorAll('.ai-live-thought.live').forEach(box => box.classList.remove('live'));
     if (reply.message) appendOrchestratorNote(reply.message, '');
     const draft = (reply.drafts || []).find(item => item.tool === 'workflows_save' && item.body);

@@ -208,7 +208,14 @@ func CodexUserProviderArgv(argv []string, baseURL string) ([]string, error) {
 		"-c", `model_providers.agentflow_user.wire_api="responses"`,
 		"-c", "model_providers.agentflow_user.requires_openai_auth=false",
 	}
-	out := make([]string, 0, len(argv)+len(config))
+	out := make([]string, 0, len(argv)+len(config)+2)
+	// Codex sends its hosted web_search tool as a Responses-API built-in. A
+	// self-hosted gateway accepts only function/mcp/knowledge_search/namespace
+	// tools and fails the whole turn with invalid_value otherwise, so the hosted
+	// tool is disabled whenever the run is pointed at a custom base URL.
+	if !isDefaultOpenAIBase(baseURL) {
+		config = append(config, "-c", `web_search="disabled"`)
+	}
 	out = append(out, argv[:len(argv)-1]...)
 	out = append(out, config...)
 	return append(out, argv[len(argv)-1]), nil
@@ -477,4 +484,11 @@ func CodexWithModel(argv []string, model string) []string {
 		return argv
 	}
 	return codexPrefixedConfig(argv, "model="+strconv.Quote(model))
+}
+
+// isDefaultOpenAIBase reports whether baseURL is OpenAI's own API, where Codex's
+// hosted tools exist.
+func isDefaultOpenAIBase(baseURL string) bool {
+	baseURL = strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
+	return baseURL == "https://api.openai.com/v1" || baseURL == "https://api.openai.com"
 }

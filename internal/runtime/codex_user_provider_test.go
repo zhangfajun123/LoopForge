@@ -7,7 +7,7 @@ import (
 
 func TestCodexUserProviderArgvInsertsProviderBeforePrompt(t *testing.T) {
 	providerArgs := func(baseURL string) []string {
-		return []string{
+		args := []string{
 			"-c", `model_provider="agentflow_user"`,
 			"-c", `model_providers.agentflow_user.name="User API"`,
 			"-c", `model_providers.agentflow_user.base_url="` + baseURL + `"`,
@@ -15,6 +15,12 @@ func TestCodexUserProviderArgvInsertsProviderBeforePrompt(t *testing.T) {
 			"-c", `model_providers.agentflow_user.wire_api="responses"`,
 			"-c", "model_providers.agentflow_user.requires_openai_auth=false",
 		}
+		// A custom gateway only accepts function/mcp/knowledge_search/namespace
+		// tools, so Codex's hosted web_search must be turned off there.
+		if baseURL != "https://api.openai.com/v1" {
+			args = append(args, "-c", `web_search="disabled"`)
+		}
+		return args
 	}
 	cases := []struct {
 		name    string

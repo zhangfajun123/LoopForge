@@ -149,7 +149,11 @@ func (h *assistantHandlers) chat(c *gin.Context) {
 	}
 	if shared {
 		if old, ok := h.repo.AssistantSession(ownerID, req.SessionID); ok {
-			merged, consistent := mergeAssistantTranscript(old.Messages, req.Messages)
+			merged, forged, consistent := mergeAssistantTranscript(old.Messages, req.Messages)
+			if forged {
+				c.JSON(400, gin.H{"error": "不能伪造共享回复"})
+				return
+			}
 			if !consistent {
 				c.JSON(409, gin.H{"error": "共享会话已更新，请重新打开后发送"})
 				return

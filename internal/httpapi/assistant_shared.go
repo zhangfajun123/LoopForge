@@ -121,7 +121,7 @@ func sharedTranscriptPrefix(old []assistantMessage, next []assistantMessage) boo
 // server's replies are kept and only the client's new user messages are
 // appended. Any other divergence (a changed user message, a forged assistant
 // reply) is refused.
-func mergeAssistantTranscript(old, req []assistantMessage) ([]assistantMessage, bool) {
+func mergeAssistantTranscript(old, req []assistantMessage) (merged []assistantMessage, forged bool, ok bool) {
 	matched := 0
 	var pending []assistantMessage
 	for _, want := range req {
@@ -129,7 +129,7 @@ func mergeAssistantTranscript(old, req []assistantMessage) ([]assistantMessage, 
 			// A reply the reader has not rendered yet may be skipped; a user
 			// message may not, that would be a rewrite of the transcript.
 			if old[matched].Role != "assistant" {
-				return nil, false
+				return nil, false, false
 			}
 			matched++
 		}
@@ -138,19 +138,20 @@ func mergeAssistantTranscript(old, req []assistantMessage) ([]assistantMessage, 
 			continue
 		}
 		if want.Role != "user" {
-			return nil, false
+			// The client is trying to author an assistant turn itself.
+			return nil, true, false
 		}
 		pending = append(pending, want)
 	}
 	for ; matched < len(old); matched++ {
 		if old[matched].Role != "assistant" {
-			return nil, false
+			return nil, false, false
 		}
 	}
-	merged := make([]assistantMessage, 0, len(old)+len(pending))
+	merged = make([]assistantMessage, 0, len(old)+len(pending))
 	merged = append(merged, old...)
 	merged = append(merged, pending...)
-	return merged, true
+	return merged, false, true
 }
 
 func assistantMessageEqual(a, b assistantMessage) bool {

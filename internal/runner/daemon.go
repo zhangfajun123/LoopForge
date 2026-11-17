@@ -1119,7 +1119,9 @@ func bindInvocationCredentials(inv *domain.RunnerInvocation, bindings []runtime.
 			if err != nil {
 				return nil, nil, err
 			}
-			argv = withProvider
+			// A role without a model would leave Codex on its built-in default,
+			// which the self-hosted gateway answers with 404 Model not found.
+			argv = runtime.CodexWithModel(withProvider, inv.CodexModel)
 		case runtime.BindClaudeCode:
 			if !personal {
 				continue

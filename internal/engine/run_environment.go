@@ -234,8 +234,8 @@ func (e *Engine) resolveRunCredentials(run domain.Run) runtime.RunCredentials {
 	credentials.GitUserName = identity.name
 	credentials.GitUserEmail = identity.email
 	if user, ok := e.repo.User(userID); ok {
-		credentials.Codex = runtime.ProviderCredential{APIKey: user.CodexAPIKey, BaseURL: user.CodexBaseURL}
-		credentials.ClaudeCode = runtime.ProviderCredential{APIKey: user.ClaudeCodeAPIKey, BaseURL: user.ClaudeCodeBaseURL}
+		credentials.Codex = runtime.ProviderCredential{APIKey: user.CodexAPIKey, BaseURL: user.CodexBaseURL, Models: user.CodexModels}
+		credentials.ClaudeCode = runtime.ProviderCredential{APIKey: user.ClaudeCodeAPIKey, BaseURL: user.ClaudeCodeBaseURL, Models: user.ClaudeCodeModels}
 		credentials.AgentCLI = runtime.AgentCLIUserCredentials(user)
 	}
 	scriptAssets, _, _ := runtime.PrepareMCPServers(e.resolveScriptMCPAssets(run.ExecutionContext.ProjectID, userID), runtime.MCPTarget{GitToken: credentials.GitToken})

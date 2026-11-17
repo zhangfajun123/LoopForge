@@ -412,6 +412,7 @@ func PublicRunnerTask(task RunnerTask) RunnerTask {
 	copyInvocation.CodeBuddyInternetEnvironment = ""
 	copyInvocation.CodexAPIKey = ""
 	copyInvocation.CodexBaseURL = ""
+	copyInvocation.CodexModel = ""
 	copyInvocation.ClaudeCodeAPIKey = ""
 	copyInvocation.ClaudeCodeBaseURL = ""
 	copyInvocation.AgentCLIAPIKey = ""
@@ -480,6 +481,10 @@ type RunnerInvocation struct {
 	CodeBuddyInternetEnvironment string   `json:"codebuddyInternetEnvironment,omitempty"`
 	CodexAPIKey                  string   `json:"codexApiKey,omitempty"`
 	CodexBaseURL                 string   `json:"codexBaseUrl,omitempty"`
+	// CodexModel is the model the platform resolved for this task. The runner
+	// applies it only when the invocation does not already name one, so a
+	// self-hosted gateway never receives Codex's built-in default model name.
+	CodexModel                   string   `json:"codexModel,omitempty"`
 	ClaudeCodeAPIKey             string   `json:"claudeCodeApiKey,omitempty"`
 	ClaudeCodeBaseURL            string   `json:"claudeCodeBaseUrl,omitempty"`
 	AgentCLIAPIKey               string   `json:"agentCliApiKey,omitempty"`

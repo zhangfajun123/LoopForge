@@ -207,6 +207,7 @@ func (e *Engine) dispatchRunnerTask(ctx context.Context, runnerID string, run do
 			}
 			invocation.CodexAPIKey = sb.credentialSnapshot().Codex.APIKey
 			invocation.CodexBaseURL = sb.credentialSnapshot().Codex.BaseURL
+			invocation.CodexModel = resolvedCodexModel(ex.Model, sb.credentialSnapshot().Codex.Models)
 		case "claude-code":
 			if strings.TrimSpace(sb.credentialSnapshot().ClaudeCode.APIKey) == "" {
 				return "", errors.New("当前责任人未配置 Claude Code API Key：请先在个人配置中配置，或将执行机器认证方式切回本机登录")
@@ -893,4 +894,15 @@ func restoreRunnerArtifacts(sandboxWorkspace string, contracts []domain.Artifact
 		}
 	}
 	return nil
+}
+
+// resolvedCodexModel picks the model a remote Codex task should run with: the
+// role's own choice when it has one, otherwise the first model the responsible
+// user saved for Codex. Leaving it empty lets Codex fall back to its built-in
+// default, which a self-hosted gateway answers with 404 Model not found.
+func resolvedCodexModel(roleModel string, models []domain.CLIModel) string {
+	if model := strings.TrimSpace(roleModel); model != "" && !strings.EqualFold(model, "default") {
+		return model
+	}
+	return runtime.FirstCredentialModel(models)
 }

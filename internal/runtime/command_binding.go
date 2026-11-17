@@ -467,3 +467,14 @@ func codexPrefixedConfig(argv []string, assignment string) []string {
 	out = append(out, "-c", assignment)
 	return append(out, argv[len(argv)-1])
 }
+
+// CodexArgvHasModel reports whether a Codex invocation already names a model.
+func CodexArgvHasModel(argv []string) bool { return codexArgvHasModel(argv) }
+
+// CodexWithModel inserts `-c model=...` before Codex's positional prompt.
+func CodexWithModel(argv []string, model string) []string {
+	if model = strings.TrimSpace(model); model == "" || codexArgvHasModel(argv) {
+		return argv
+	}
+	return codexPrefixedConfig(argv, "model="+strconv.Quote(model))
+}

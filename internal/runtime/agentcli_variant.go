@@ -2,8 +2,34 @@ package runtime
 
 import "strings"
 
+// WithOpenCodeStandalone inserts --standalone into `opencode run`'s flag block
+// so the task starts a private server instead of using the user's shared managed
+// service. Each task runs in its own private HOME, so two agents — or a service
+// left behind by an earlier attempt — collide on opencode's fixed service port
+// ("Managed service port 49374 ... is already in use"). Isolation is already the
+// contract; --standalone is what makes it stick.
+func WithOpenCodeStandalone(argv []string) []string {
+	for _, arg := range argv {
+		if arg == "--standalone" {
+			return argv
+		}
+	}
+	out := make([]string, 0, len(argv)+1)
+	inserted := false
+	for i, arg := range argv {
+		out = append(out, arg)
+		if !inserted && i > 0 && arg == "run" {
+			out = append(out, "--standalone")
+			inserted = true
+		}
+	}
+	if !inserted {
+		return argv
+	}
+	return out
+}
 // FoldOpenCodeVariant adapts an "--variant <effort>" pair to the local opencode
-// CLI. opencode 2.x removed the standalone flag and reads the reasoning effort
+// CLI. opencode 2.x dropped the standalone flag and reads the reasoning effort
 // from the model id instead (provider/model#variant), so an argv built for 1.x
 // dies with "Unrecognized flag: --variant" before the turn even starts.
 //

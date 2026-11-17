@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+func TestWithOpenCodeStandalone(t *testing.T) {
+	cases := []struct {
+		name string
+		argv []string
+		want []string
+	}{
+		{
+			name: "inserted right after the subcommand",
+			argv: []string{"opencode", "run", "--format", "json", "-m", "agentflow/m", "prompt"},
+			want: []string{"opencode", "run", "--standalone", "--format", "json", "-m", "agentflow/m", "prompt"},
+		},
+		{
+			name: "already standalone stays put",
+			argv: []string{"opencode", "run", "--standalone", "--format", "json", "prompt"},
+			want: []string{"opencode", "run", "--standalone", "--format", "json", "prompt"},
+		},
+		{
+			name: "no subcommand means no change",
+			argv: []string{"opencode", "--format", "json", "prompt"},
+			want: []string{"opencode", "--format", "json", "prompt"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := WithOpenCodeStandalone(tc.argv); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("argv = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // opencode 2.x has no standalone --variant flag: the reasoning effort has to
 // ride on the model id. Both shapes must survive the fold unchanged.
 func TestFoldOpenCodeVariant(t *testing.T) {

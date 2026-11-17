@@ -877,6 +877,14 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 		// image's CLI, which this host cannot inspect, so leave it alone.
 		if prepared.Command.Provider == runtime.AgentCLIOpenCode && (sandbox == nil || !strings.EqualFold(task.Sandbox.Profile.Driver, "docker")) {
 			argv = runtime.FoldOpenCodeVariant(argv, d.agentCLIAcceptsFlag(argv[0], "run", "--variant"))
+			// Every task runs in its own private HOME, but opencode's managed
+			// service listens on one fixed port, so a service left behind by an
+			// earlier attempt makes the next agent die with "Managed service port
+			// ... is already in use". A private server keeps the isolation real
+			// and never touches the machine owner's own opencode session.
+			if d.agentCLIAcceptsFlag(argv[0], "run", "--standalone") {
+				argv = runtime.WithOpenCodeStandalone(argv)
+			}
 		}
 	} else if prepared.Command.PrivateHome {
 		// Provider CLIs (codex/claude-code/codebuddy) used to receive a private

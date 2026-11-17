@@ -32,7 +32,10 @@ echo "镜像   : $SRC ($ARCH, $(( BYTES / 1024 / 1024 )) MB)"
 echo "目标   : $HOST:$APP_DIR"
 
 START=$(date +%s)
-if [[ "$COMPRESS" == "1" ]]; then
+if [[ "$COMPRESS" == "zstd" ]]; then
+  # 多线程压缩，比裸流传得快（实测 8.4GB：裸流 321s）
+  docker save "$SRC" | zstd -3 -T0 -c | rssh_pipe "zstd -d -c | docker load" | tail -2
+elif [[ "$COMPRESS" == "1" ]]; then
   docker save "$SRC" | gzip -1 | rssh_pipe "gunzip | docker load" | tail -2
 else
   docker save "$SRC" | rssh_pipe "docker load" | tail -2

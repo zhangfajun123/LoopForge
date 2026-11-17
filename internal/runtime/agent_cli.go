@@ -391,7 +391,7 @@ func ApplyAgentCLICredential(kind string, cred ProviderCredential, options Agent
 		options.Model = model
 	}
 	if model == "" && !agentCLIModelOptional(kind, baseURL) {
-		return nil, nil, fmt.Errorf("%s 需要指定模型", AgentCLILabel(kind))
+		return nil, nil, fmt.Errorf("%s 需要指定模型：在角色里选择一个模型，或在个人配置里为这个 CLI 保存模型（同一网关上的其它 CLI 已保存的模型会自动沿用）", AgentCLILabel(kind))
 	}
 	homeEnv = filepath.ToSlash(homeEnv)
 	env := map[string]string{}
@@ -562,6 +562,14 @@ func insertBeforeFlag(argv []string, flag string, values ...string) []string {
 
 // AgentCLIUserCredentials maps a user's saved agent CLI credentials onto the
 // form command bindings use.
+//
+// A CLI whose own saved model list is empty inherits the models saved for
+// another CLI on the **same Base URL**. The model list belongs to the gateway
+// route, not to one CLI, but personal settings are edited per CLI: a user who
+// pointed OpenCode at a gateway and then added Hermes against the same gateway
+// ends up with `hermes.models = []`, and every run refuses it with
+// 「Hermes 需要指定模型」 although the route plainly serves models. Native routes
+// (empty Base URL) inherit nothing.
 func AgentCLIUserCredentials(user domain.User) map[string]ProviderCredential {
 	if len(user.AgentCLICredentials) == 0 {
 		return nil
@@ -570,7 +578,41 @@ func AgentCLIUserCredentials(user domain.User) map[string]ProviderCredential {
 	for kind, cred := range user.AgentCLICredentials {
 		out[kind] = ProviderCredential{APIKey: cred.APIKey, BaseURL: cred.BaseURL, Protocol: cred.Protocol, Models: cred.Models}
 	}
+	for kind, cred := range out {
+		if len(cred.Models) > 0 {
+			continue
+		}
+		if models := agentCLIRouteModels(cred.BaseURL, out); len(models) > 0 {
+			cred.Models = models
+			out[kind] = cred
+		}
+	}
 	return out
+}
+
+// agentCLIRouteModels returns the models another CLI saved for the same route.
+// Kinds are visited in name order so the inherited list is deterministic.
+func agentCLIRouteModels(baseURL string, creds map[string]ProviderCredential) []domain.CLIModel {
+	route := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if route == "" {
+		return nil
+	}
+	kinds := make([]string, 0, len(creds))
+	for kind := range creds {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	for _, kind := range kinds {
+		cred := creds[kind]
+		if len(cred.Models) == 0 {
+			continue
+		}
+		if strings.TrimRight(strings.TrimSpace(cred.BaseURL), "/") != route {
+			continue
+		}
+		return cred.Models
+	}
+	return nil
 }
 
 // AgentCLILabel is the product name shown in errors and settings.

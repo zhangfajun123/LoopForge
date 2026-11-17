@@ -16,6 +16,9 @@ type dispatchRequest struct {
 	IssueID, WorkflowID, ScheduleJobID, TriggerOrigin string
 	Rerun                                             bool
 	TriggerUserID                                     int64
+	// ExecutionRunnerID picks the machine this run executes on. Empty keeps the
+	// responsible user's default machine, then the cloud pool.
+	ExecutionRunnerID string
 }
 
 func dispatchIssue(d *deps, req dispatchRequest) (domain.Task, error) {
@@ -81,6 +84,10 @@ func dispatchIssue(d *deps, req dispatchRequest) (domain.Task, error) {
 				runUserID = user.ID
 			}
 		}
+	}
+	executionRunnerID, pickErr := d.executionRunnerPick(req.TriggerUserID, issue.ProjectID, req.ExecutionRunnerID)
+	if pickErr != nil {
+		return domain.Task{}, pickErr
 	}
 	hasSameSOP := d.repo.IssueHasTaskForWorkflow(issue.ID, workflowID)
 	// A schedule only picks up untouched issues; another SOP lane is a human decision.
@@ -202,7 +209,7 @@ func dispatchIssue(d *deps, req dispatchRequest) (domain.Task, error) {
 		return domain.Task{}, err
 	}
 	tapdID := issue.RequirementTAPDID()
-	run, err := d.engine.StartWithRepositoriesContext(workflowID, input, repositories, domain.TelemetryContext{ProjectID: issue.ProjectID, IssueID: issue.ID, TAPDID: tapdID, ResponsibleUserID: runUserID, IssueNumber: issue.Number, TaskID: taskID, ScheduleJobID: strings.TrimSpace(req.ScheduleJobID)})
+	run, err := d.engine.StartWithRepositoriesContext(workflowID, input, repositories, domain.TelemetryContext{ProjectID: issue.ProjectID, IssueID: issue.ID, TAPDID: tapdID, ResponsibleUserID: runUserID, IssueNumber: issue.Number, TaskID: taskID, ScheduleJobID: strings.TrimSpace(req.ScheduleJobID), ExecutionRunnerID: executionRunnerID})
 	if err != nil {
 		task.Status = "failed"
 		_ = d.repo.PutTask(task)

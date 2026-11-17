@@ -129,8 +129,12 @@ func (e *Engine) startWorkflowDefinition(wf domain.WorkflowDefinition, input str
 		firstRepository = repositories[0]
 	}
 	executionContext.RunID, executionContext.TraceID, executionContext.WorkflowID, executionContext.WorkflowVersion = id, id, workflowID, wf.Version
+	// A per-run 执行机器 pick survives: the responsible user's default only
+	// fills the field when the caller did not name a machine.
 	if executionContext.ParentRunID == "" && !executionContext.ExecutionPinned {
-		executionContext.ExecutionRunnerID = e.repo.DefaultRunner(executionContext.ResponsibleUserID)
+		if strings.TrimSpace(executionContext.ExecutionRunnerID) == "" {
+			executionContext.ExecutionRunnerID = e.repo.DefaultRunner(executionContext.ResponsibleUserID)
+		}
 		executionContext.WorkspaceRunID = ""
 	}
 	if executionContext.ExecutionRunnerID == "" && !executionContext.ExecutionPinned {

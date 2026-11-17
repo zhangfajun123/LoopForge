@@ -93,6 +93,9 @@ func (h *runsHandlers) runs(c *gin.Context) {
 			WorkflowID string `json:"workflowId"`
 			Input      string `json:"input"`
 			ProjectID  string `json:"projectId"`
+			// ExecutionRunnerID picks the machine this run executes on. Empty
+			// keeps the responsible user's default machine.
+			ExecutionRunnerID string `json:"executionRunnerId"`
 		}
 		if !decode(c, &req) {
 			return
@@ -114,14 +117,19 @@ func (h *runsHandlers) runs(c *gin.Context) {
 		if !h.requireProjectWriter(c, req.ProjectID, workflowProject) {
 			return
 		}
-		var responsibleUserID int64
+		var responsibleUserID, callerID int64
 		if current, ok := h.requestUser(r, true); ok {
-			responsibleUserID = current.ID
+			responsibleUserID, callerID = current.ID, current.ID
 		} else if project.OwnerID > 0 {
 			responsibleUserID = project.OwnerID
 		}
 		if responsibleUserID == 0 {
 			c.JSON(http.StatusConflict, map[string]string{"error": "手动运行需要登录用户或已配置 Owner 的项目"})
+			return
+		}
+		executionRunnerID, pickErr := h.deps.executionRunnerPick(callerID, req.ProjectID, req.ExecutionRunnerID)
+		if pickErr != nil {
+			respond(c, pickErr)
 			return
 		}
 		var repositories []domain.RepositoryContext
@@ -134,7 +142,7 @@ func (h *runsHandlers) runs(c *gin.Context) {
 			}
 			repositories = []domain.RepositoryContext{repositoryRunContext(repoDef)}
 		}
-		v, err := h.engine.StartWithRepositoriesContext(req.WorkflowID, req.Input, repositories, domain.TelemetryContext{ProjectID: req.ProjectID, ResponsibleUserID: responsibleUserID})
+		v, err := h.engine.StartWithRepositoriesContext(req.WorkflowID, req.Input, repositories, domain.TelemetryContext{ProjectID: req.ProjectID, ResponsibleUserID: responsibleUserID, ExecutionRunnerID: executionRunnerID})
 		if err != nil {
 			respond(c, err)
 			return

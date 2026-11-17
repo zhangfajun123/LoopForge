@@ -305,6 +305,9 @@ func (h issuesHandlers) dispatchIssueRoute(c *gin.Context, issue domain.Issue) {
 	var request struct {
 		Rerun      bool   `json:"rerun"`
 		WorkflowID string `json:"workflowId"`
+		// ExecutionRunnerID picks the machine this SOP runs on; empty keeps the
+		// responsible user's default machine.
+		ExecutionRunnerID string `json:"executionRunnerId"`
 	}
 	if !decodeOptional(c, &request) {
 		return
@@ -313,7 +316,7 @@ func (h issuesHandlers) dispatchIssueRoute(c *gin.Context, issue domain.Issue) {
 	if current, ok := h.requestUser(c.Request, true); ok && current != nil && current.ID > 0 {
 		triggerUserID = current.ID
 	}
-	task, err := dispatchIssue(h.deps, dispatchRequest{IssueID: issue.ID, WorkflowID: request.WorkflowID, Rerun: request.Rerun, TriggerUserID: triggerUserID})
+	task, err := dispatchIssue(h.deps, dispatchRequest{IssueID: issue.ID, WorkflowID: request.WorkflowID, Rerun: request.Rerun, TriggerUserID: triggerUserID, ExecutionRunnerID: request.ExecutionRunnerID})
 	if err != nil {
 		respond(c, err)
 		return

@@ -583,6 +583,7 @@ func newWithNotifications(s *repo.Store, e *engine.Engine, syncSvc *tracker.Serv
 	g.POST("/api/runners/deregister", api.runners.runnerDeregister)
 	g.POST("/api/runners/disconnect", api.runners.runnerDisconnect)
 	g.POST("/api/runners/bind-codes", api.runners.issueRunnerBindCode)
+	g.GET("/api/runners/selectable", api.runners.runnerSelectable)
 	g.GET("/api/runners/default", api.runners.runnerDefault)
 	g.PUT("/api/runners/default", api.runners.runnerDefaultSet)
 	g.DELETE("/api/runners/:id", api.runners.runnerRemove)

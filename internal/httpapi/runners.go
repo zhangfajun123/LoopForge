@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -260,6 +261,61 @@ func (h *runnersHandlers) runnerDefault(c *gin.Context) {
 		// minRunnerVersion lets the runners page disable「设为默认」with the
 		// same rule PUT /api/runners/default enforces.
 		"minRunnerVersion": domain.RunnerVersionDefaultSelection,
+	})
+}
+
+// runnerSelectable lists the 执行机器 a run of this project may be started on,
+// each with the reason it is unavailable. The rule lives in executionRunnerPick
+// so the UI and the two start endpoints cannot drift apart.
+// 路由: g.GET("/api/runners/selectable", h.runnerSelectable)
+func (h *runnersHandlers) runnerSelectable(c *gin.Context) {
+	user, ok := h.requestUser(c.Request, true)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, map[string]string{"error": "请先登录后选择执行机器"})
+		return
+	}
+	projectID := strings.TrimSpace(c.Query("projectId"))
+	defaultRunnerID := h.repo.DefaultRunner(user.ID)
+	type selectableRunner struct {
+		ID            string   `json:"id"`
+		Name          string   `json:"name"`
+		OwnerUserID   int64    `json:"ownerUserId,omitempty"`
+		RunnerVersion string   `json:"runnerVersion"`
+		Labels        []string `json:"labels,omitempty"`
+		Online        bool     `json:"online"`
+		Selectable    bool     `json:"selectable"`
+		Reason        string   `json:"reason,omitempty"`
+		IsDefault     bool     `json:"isDefault,omitempty"`
+		IsMine        bool     `json:"isMine,omitempty"`
+	}
+	options := make([]selectableRunner, 0, 8)
+	for _, runner := range h.repo.Runners() {
+		option := selectableRunner{
+			ID:            runner.ID,
+			Name:          runnerPickName(runner),
+			OwnerUserID:   runner.OwnerUserID,
+			RunnerVersion: strings.TrimSpace(runner.RunnerVersion),
+			Labels:        runner.Labels,
+			Online:        runner.Status == domain.RunnerStatusOnline,
+			IsDefault:     runner.ID == defaultRunnerID,
+			IsMine:        runner.OwnerUserID == user.ID,
+		}
+		if _, err := h.executionRunnerPick(user.ID, projectID, runner.ID); err != nil {
+			var httpErr HTTPError
+			if errors.As(err, &httpErr) {
+				option.Reason = httpErr.Message
+			} else {
+				option.Reason = err.Error()
+			}
+		} else {
+			option.Selectable = true
+		}
+		options = append(options, option)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"projectId":       projectID,
+		"defaultRunnerId": defaultRunnerID,
+		"options":         options,
 	})
 }
 

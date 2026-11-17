@@ -160,6 +160,7 @@ const AF_CONFIRM_MODAL_HTML=`<div id="confirmModal" class="modal">
       <label id="confirmPromptLabel">请输入信息</label>
       <input type="text" id="confirmPromptInput" class="input" autocomplete="off">
       <textarea id="confirmPromptMultiline" class="input" rows="6" maxlength="65536" hidden></textarea>
+      <select id="confirmChoiceSelect" class="select" hidden></select>
     </div>
     <div class="confirm-modal-footer">
       <button type="button" class="button ghost" id="confirmCancelBtn">取消</button>
@@ -204,6 +205,8 @@ function afNextDialog(){
   const modal=afConfirmModal();
   if(!afDialogOpener){const active=document.activeElement;afDialogOpener=active&&active!==document.body&&!modal.contains(active)?active:null}
   $('#confirmPromptWrap').hidden=true;
+  const choiceSelect=$('#confirmChoiceSelect');
+  if(choiceSelect)choiceSelect.hidden=true;
   const rerunFields=$('#rerunFromNodeFields');
   if(rerunFields)rerunFields.hidden=true;
   const okBtn=$('#confirmOkBtn'),cancelBtn=$('#confirmCancelBtn');
@@ -309,6 +312,32 @@ function afPrompt(options, defaultVal=''){
     $('#confirmCancelBtn').textContent=opt.cancelText||'取消';
     setConfirmIcon(opt.danger?'danger':'info','edit');
     return {focus:promptInput,select:true,value:isOk=>isOk?promptInput.value:null};
+  });
+}
+
+// afSelect offers a closed list instead of free text in the same dialog; the
+// promise resolves with the chosen value, or null when the dialog is cancelled.
+function afSelect(options){
+  const opt=options||{};
+  return afOpenDialog(()=>{
+    $('#confirmTitle').textContent=opt.title||'请选择';
+    $('#confirmMessage').textContent=opt.message||'';
+    const wrap=$('#confirmPromptWrap'),single=$('#confirmPromptInput'),multi=$('#confirmPromptMultiline'),select=$('#confirmChoiceSelect');
+    wrap.hidden=false;
+    single.hidden=true;
+    multi.hidden=true;
+    select.hidden=false;
+    select.innerHTML=(opt.choices||[]).map(choice=>`<option value="${escapeHTML(choice.value)}">${escapeHTML(choice.label)}</option>`).join('');
+    select.value=String(opt.value??'');
+    const label=$('#confirmPromptLabel');
+    label.textContent=opt.label||opt.title||'请选择';
+    label.htmlFor='confirmChoiceSelect';
+    const okBtn=$('#confirmOkBtn');
+    okBtn.textContent=opt.confirmText||'确定';
+    okBtn.className='button primary';
+    $('#confirmCancelBtn').textContent=opt.cancelText||'取消';
+    setConfirmIcon('info','server');
+    return {focus:select,value:isOk=>isOk?select.value:null};
   });
 }
 

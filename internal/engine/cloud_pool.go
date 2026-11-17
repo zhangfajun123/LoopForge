@@ -146,6 +146,27 @@ func (e *Engine) CloudPoolStatus() (configured bool, online int) {
 	return true, len(e.eligiblePoolRunners(label))
 }
 
+// PoolEligibleRunner reports whether runnerID may take pool work for projectID
+// right now. It lets a per-run 执行机器 pick tell a platform machine the project
+// reaches through the pool apart from a machine owned by another person.
+func (e *Engine) PoolEligibleRunner(runnerID, projectID string) bool {
+	runnerID = strings.TrimSpace(runnerID)
+	if runnerID == "" {
+		return false
+	}
+	e.mu.Lock()
+	pool := e.cloudPool
+	e.mu.Unlock()
+	if !pool.serves(projectID) {
+		return false
+	}
+	runner, ok := e.repo.Runner(runnerID)
+	if !ok {
+		return false
+	}
+	return poolRunnerEligible(runner, pool.Label)
+}
+
 func (e *Engine) cloudPoolLabel() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()

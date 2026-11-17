@@ -44,18 +44,27 @@ func hermesAPIName(protocol string) string {
 
 // hermesConfig renders the YAML Hermes reads: the route under `providers` plus
 // the same route as the default model.
+//
+// Hermes stores the Base URL in providers.<id>.api — that field is NOT the wire
+// protocol (writing "chat" there makes every request fail with
+// "Request URL is missing an 'http://' or 'https://' protocol"), and the default
+// model must name the provider as custom:<id>, otherwise Hermes ignores the
+// block and keeps retrying a route it cannot resolve.
 func hermesConfig(api, key, baseURL, model, effort string) []byte {
+	// Hermes derives the transport from the provider block itself, so the
+	// platform protocol only gates which credentials are accepted.
+	_ = api
+	const providerID = "agentflow"
 	lines := []string{
 		"model:",
-		"  provider: agentflow",
+		"  provider: " + strconv.Quote("custom:"+providerID),
 		"  default: " + strconv.Quote(model),
 		"  base_url: " + strconv.Quote(baseURL),
 		"  api_key: " + strconv.Quote(key),
 		"providers:",
-		"  agentflow:",
+		"  " + providerID + ":",
 		"    name: AgentFlow",
-		"    api: " + strconv.Quote(api),
-		"    base_url: " + strconv.Quote(baseURL),
+		"    api: " + strconv.Quote(baseURL),
 		"    api_key: " + strconv.Quote(key),
 		"    default_model: " + strconv.Quote(model),
 	}

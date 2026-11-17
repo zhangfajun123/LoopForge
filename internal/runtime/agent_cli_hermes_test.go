@@ -67,15 +67,24 @@ func TestHermesCredentialWritesRouteAndUsageFlag(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	for _, want := range []string{
-		"provider: agentflow",
+		`provider: "custom:agentflow"`,
 		`default: "glm-5.3-flash"`,
 		`base_url: "https://gw.example/v1"`,
 		`api_key: "sk-secret"`,
-		`api: "chat"`,
+		// Hermes keeps the Base URL in providers.<id>.api; a protocol name there
+		// yields httpcore.UnsupportedProtocol and the run retries until it hangs.
+		`api: "https://gw.example/v1"`,
+		`default_model: "glm-5.3-flash"`,
 		`reasoning_effort: "high"`,
 	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("config misses %q:\n%s", want, raw)
+		}
+	}
+	// Guard the two mistakes that silently hang the executor.
+	for _, forbidden := range []string{`api: "chat"`, `provider: agentflow`} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("config must not contain %q:\n%s", forbidden, raw)
 		}
 	}
 }

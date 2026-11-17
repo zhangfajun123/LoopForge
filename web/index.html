@@ -471,6 +471,10 @@
               <select id="workflowSandbox" class="select flow-select"></select>
               <div class="flow-field-hint">当前 SOP 节点执行 Shell/Python 及构建命令所绑定的隔离沙箱</div>
             </div>
+            <div id="workflowSkipRepositoryField" class="flow-field-wrap">
+              <label class="toggle-row" for="workflowSkipRepository"><input id="workflowSkipRepository" type="checkbox"> 本 SOP 不需要代码仓库</label>
+              <div class="flow-field-hint">勾选后本次运行不检出任何仓库（忽略需求里选的仓库与项目默认仓库），产物只落在运行工作区；内容生产类 SOP 用这个，代码类 SOP 别勾</div>
+            </div>
             <div class="flow-form-row two-col">
               <div class="flow-field-wrap">
                 <label for="workflowStatus" class="flow-field-label">发布状态</label>

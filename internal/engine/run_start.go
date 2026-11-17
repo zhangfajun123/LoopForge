@@ -113,6 +113,12 @@ func (e *Engine) startWorkflowDefinition(wf domain.WorkflowDefinition, input str
 	if _, err := workflowSandboxRequirements(e.repo, wf); err != nil {
 		return domain.Run{}, err
 	}
+	// A SOP whose nodes never touch the repository runs without a checkout: the
+// project's default repository stays off the execution machine entirely.
+	skipRepository := wf.SkipRepository
+	if skipRepository {
+		repositories = nil
+	}
 	now := time.Now().UTC()
 	id := fmt.Sprintf("run-%d", now.UnixNano())
 	assignWorkBranches(repositories, func() string {
@@ -166,6 +172,9 @@ func (e *Engine) startWorkflowDefinition(wf domain.WorkflowDefinition, input str
 	}
 	for _, n := range wf.Nodes {
 		r.Nodes[n.ID] = &domain.NodeRun{NodeID: n.ID, Status: "pending"}
+	}
+	if skipRepository {
+		e.event(&r, "", "repository.skipped", "本 SOP 声明不需要代码仓库，本次运行不检出任何仓库，产物只落在运行工作区")
 	}
 	if executionContext.ParentRunID != "" {
 		parent, exists := e.repo.RunState(executionContext.ParentRunID)

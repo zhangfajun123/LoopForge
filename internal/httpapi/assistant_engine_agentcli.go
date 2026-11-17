@@ -10,10 +10,32 @@ import (
 	"agentflow/internal/runtime"
 )
 
+// assistantAgentCLIModel resolves the model a chat turn actually runs. A session
+// that picked 「CLI default」 stores the literal "default", which no CLI can use
+// (opencode would write provider/ "agentflow/default" and the gateway answers
+// 404), so fall back to the user's saved catalog for that CLI and then to the
+// built-in catalog default. An empty result means the CLI keeps its own default.
+func assistantAgentCLIModel(kind, model string, cred runtime.ProviderCredential) string {
+	model = strings.TrimSpace(model)
+	if model != "" && !strings.EqualFold(model, "default") {
+		return model
+	}
+	for _, saved := range cred.Models {
+		if id := strings.TrimSpace(saved.ID); id != "" && !strings.EqualFold(id, "default") {
+			return id
+		}
+	}
+	if catalog, ok := executorModelCatalogs()[kind]; ok {
+		return strings.TrimSpace(catalog.Default)
+	}
+	return ""
+}
+
 // prepareAssistantAgentCLIInvocation runs one chat turn on an agent CLI in
 // its own headless mode, read-only: the session's MCP gateway stays
 // available while the CLI's shell, edit and web tools are denied.
 func prepareAssistantAgentCLIInvocation(kind string, o assistantEngineInvocationOpts) (assistantCLIInvocation, error) {
+	o.Model = assistantAgentCLIModel(kind, o.Model, o.User)
 	servers, err := readAssistantMCPServers(o.Config)
 	if err != nil {
 		return assistantCLIInvocation{}, err

@@ -107,6 +107,12 @@ func AgentCLICommand(kind string, o AgentCLICommandOptions) CommandSpec {
 		binary = AgentCLIBinary(kind)
 	}
 	model := strings.TrimSpace(o.Model)
+	// Chat stores 「CLI default」 as the literal "default". Sending that to a CLI
+	// asks the gateway for a model with that name (404 Model not found), so treat
+	// it as "no explicit model" and let the provider config decide.
+	if strings.EqualFold(model, "default") {
+		model = ""
+	}
 	effort := strings.TrimSpace(o.Effort)
 	resume := strings.TrimSpace(o.Resume)
 	prompt := o.Prompt

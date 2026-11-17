@@ -11,7 +11,7 @@ const modes = [
 ];
 
 // `glyph` is a rendered brand mark. Options that only set `icon` keep the Harness icon.
-export default function PermissionPicker({ value, onSelect, open, onOpenChange, label = "操作确认方式", icon, options = modes }) {
+export default function PermissionPicker({ value, onSelect, open, onOpenChange, label = "操作确认方式", icon, options = modes, disabled = false, hint = "" }) {
   const trigger = useRef(null);
   const panel = useRef(null);
   const initialFocus = useRef(null);
@@ -21,6 +21,11 @@ export default function PermissionPicker({ value, onSelect, open, onOpenChange, 
   const presence = usePanelPresence(open, 160);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 260, maxHeight: 360, placement: "top" });
   const current = options.find((mode) => mode.id === value) || options[0];
+
+  // A pinned conversation keeps its CLI: the trigger stays visible but closed.
+  useEffect(() => {
+    if (disabled && open) callbacks.current.onOpenChange(false);
+  }, [disabled, open]);
 
   const place = useCallback(() => {
     if (!trigger.current || !panel.current) return;
@@ -155,12 +160,19 @@ export default function PermissionPicker({ value, onSelect, open, onOpenChange, 
         type="button"
         className="permission-selector"
         data-tone={current.tone}
-        aria-label={label}
+        data-disabled={disabled ? "true" : undefined}
+        disabled={disabled}
+        title={hint || undefined}
+        aria-label={hint ? `${label}：${hint}` : label}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={identity}
-        onClick={() => onOpenChange(!open)}
+        onClick={() => {
+          if (disabled) return;
+          onOpenChange(!open);
+        }}
         onKeyDown={(event) => {
+          if (disabled) return;
           if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
             if (open && presence.mounted) keyDown(event);
             else {

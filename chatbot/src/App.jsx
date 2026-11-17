@@ -2042,9 +2042,17 @@ export default function App() {
                         e.target.value = "";
                       }}
                     />
-                    {chat.executors.length > 1 && !pinnedExecutor ? (
+                    {chat.executors.length > 1 ? (
                       <PermissionPicker
                         label="CLI"
+                        // A conversation keeps the CLI it started with, so the
+                        // picker stays visible but disabled instead of vanishing.
+                        disabled={Boolean(pinnedExecutor)}
+                        hint={
+                          pinnedExecutor
+                            ? `本会话已绑定 ${pinnedExecutor.name || pinnedExecutor.id}，换执行器请新建会话`
+                            : ""
+                        }
                         options={chat.executors.map((executor) => {
                           const brand = engineBrand(executor.id);
                           return {

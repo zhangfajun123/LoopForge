@@ -159,3 +159,10 @@
     transition: none;
   }
 }
+
+/* 会话开始后 CLI 被钉死：触发器保持可见但禁用，提示换执行器要新建会话 */
+.chat-shell button.permission-selector[data-disabled="true"],
+.chat-shell button.permission-selector[data-disabled="true"]:is(:hover, [aria-expanded="true"]) {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

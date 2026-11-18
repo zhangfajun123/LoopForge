@@ -4,11 +4,11 @@
 #   node:22 + apt 工具 + 基础 CLI（codex / codebuddy / dsh）+ 可搬迁 Python + docker CLI
 #
 # 这一层刻意不含平台二进制与业务代码：
-#   - 二进制在 Dockerfile.app 的最后一层里 COPY 进来，所以改一行业务代码不会让它失效
-#   - 只有「换 Node / 换 apt 包 / 换基础 CLI 版本 / 换 Python」才需要重建它
+#   - 二进制在第 3 层（Dockerfile.app）里 COPY 进来，改业务代码不会让它失效
+#   - 只有「换 Node / 换 apt 包 / 换基础 CLI 版本 / 换 Python」才需要重建
 #
-# 构建：
-#   docker build -f deploy/Dockerfile.runtime-base -t loopforge:runtime-<date> .
+# 由 scripts/gen-runtime-base.py 从根 Dockerfile 原样生成，改根文件后重跑即可。
+# 构建：docker build -f deploy/Dockerfile.runtime-base -t loopforge:runtime-<date> .
 FROM node:22-bookworm
 # 国内构建走镜像源；CI 在境外可 --build-arg NPM_REGISTRY=https://registry.npmjs.org 覆盖
 ARG NPM_REGISTRY=https://registry.npmmirror.com
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.npm apt-get update && apt-get install -y --
 # names differing only in case, which a case-insensitive data directory (macOS)
 # cannot hold; the hooks never use curses.
 ARG TARGETARCH
-ARG PYTHON_STANDALONE=20261110/cpython-3.12.16+202****1110
+ARG PYTHON_STANDALONE=20261110/cpython-3.12.16+20261110
 ARG PYTHON_STANDALONE_SHA256_AMD64=6a9e62dad033790aef722dbd370e0ce76ce17b73627ba3ae679f537049350b39
 ARG PYTHON_STANDALONE_SHA256_ARM64=b6a41defec4975d94b4ff1950236e7383e5c02ba40ea48c9ec33c66087a35aab
 RUN case "${TARGETARCH:-amd64}" in \
@@ -33,11 +33,13 @@ RUN case "${TARGETARCH:-amd64}" in \
  && mkdir -p /app \
  && tar -xzf /tmp/python.tar.gz -C /app \
  && rm -f /tmp/python.tar.gz \
- && find /app/python/share/terminfo -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true \
+ && rm -rf /app/python/share/terminfo \
  && /app/python/bin/python3 -c 'import json,urllib.request,ctypes'
 COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker:27-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 WORKDIR /app
 COPY third_party/go/ /app/third_party/go/
 ENV PATH="/app/bin:${PATH}"
+# An explicit LOOPFORGE_COMMIT wins. Otherwise read HEAD from the build context
+# so `docker build` stamps the same corner label as the release workflow.
 EXPOSE 8080

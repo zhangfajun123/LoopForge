@@ -16,11 +16,11 @@ ARG NPM_REGISTRY=https://registry.npmmirror.com
 # 再执行 npm 安装；同时用 engine-strict 把引擎不匹配从 warning 变成硬失败。
 ARG NODE_MAJOR=22
 ARG OPENCODE_VERSION=1.19.5
-# 必须与主 Dockerfile 的 `npm install -g @openai/codex@<版本>` 保持一致：平台镜像里
-# 跑云端执行、执行机器上跑本地执行，两边版本不同会让同一条 SOP 在云端和远端表现不同
-#（0.162.1 在 approval_policy=never 下必须靠 `-c mcp_servers.<id>.default_tools_approval_mode="approve"`
-# 才允许调 MCP；0.169.0 已默认放行）。改成新版本前先在执行机上 A/B 验证 MCP 闸口调用仍正常。
-ARG CODEX_VERSION=0.162.1
+# 三处钉值必须一致：主 Dockerfile、本文件的 ARG、CI 冒烟。云端在本镜像里跑 codex、
+# 执行机器跑本机装的 codex，两边不同会让同一条 SOP 在两处表现不一致。
+# 0.162.1 在 approval_policy=never 下必须靠 `-c mcp_servers.<id>.default_tools_approval_mode="approve"`
+# 才能调 MCP（runner 侧已加），0.169.0 默认放行；线上实际部署的是 0.169.0，故统一到它。
+ARG CODEX_VERSION=0.169.0
 ARG DSH_VERSION=0.2.2-rc.1
 ARG WITH_HERMES=0
 

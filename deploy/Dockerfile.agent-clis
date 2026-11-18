@@ -7,7 +7,12 @@
 #     --build-arg BASE=<平台镜像> \
 #     --build-arg WITH_HERMES=1 \
 #     -t loopforge:clis .
-ARG BASE=swr.cn-north-4.myhuaweicloud.com/swr-hd-mig/loopforge:190d948-202611161657UTC
+# 第 2 层：Agent CLI 能力层（只在装/升 CLI 时重建）
+#
+# 底座是第 1 层 runtime-base（不是平台应用镜像）：这样 CLI 层的父层
+# 不会随业务代码变化而失效，npm install 结果能长期命中缓存。
+# 用 deploy/build-images.sh 按 runtime → clis → app 的顺序构建。
+ARG BASE=swr.cn-north-4.myhuaweicloud.com/swr-hd-mig/loopforge:runtime
 FROM ${BASE}
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com

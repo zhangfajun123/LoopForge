@@ -44,11 +44,10 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 WORKDIR /app
-# 二进制先落到临时目录再换，避免覆盖正在运行的同一 inode（bind mount 场景）
-COPY --from=build /out/ /app/bin.new/
-RUN rm -rf /app/bin.prev && ( [ -d /app/bin ] && mv /app/bin /app/bin.prev || true ) \
- && mv /app/bin.new /app/bin && rm -rf /app/bin.prev \
- && chmod 755 /app/bin/*
+# 直接 COPY 覆盖，权限在同一条指令里给定（--chmod），不再额外产生一层。
+# 不要写成「COPY 到临时目录再 RUN 移动」：overlay 里移动同一批文件会再落一层，
+# 实测压缩后要多传 68 MB，等于每发一次版付两次钱。
+COPY --chmod=755 --from=build /out/ /app/bin/
 COPY LICENSE THIRD_PARTY_NOTICES.md /app/
 # An explicit LOOPFORGE_COMMIT wins. Otherwise read HEAD from the build context
 # so `docker build` stamps the same corner label as the release workflow.

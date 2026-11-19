@@ -9,6 +9,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/gorilla/websocket v1.5.3
+	github.com/huaweicloud/huaweicloud-sdk-go-obs v3.21.1+incompatible
 	github.com/klauspost/compress v1.20.3
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0

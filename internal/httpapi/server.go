@@ -26,6 +26,7 @@ import (
 	"agentflow/internal/mcpserver"
 	"agentflow/internal/notification"
 	"agentflow/internal/observability"
+	"agentflow/internal/obsstore"
 	"agentflow/internal/repo"
 	"agentflow/internal/runtime"
 	"agentflow/internal/schedule"
@@ -43,6 +44,9 @@ type deps struct {
 	schedule   *schedule.Service
 	authClient *auth.Client
 	api        http.Handler
+	// blobs is the OBS binding for large run artifacts; nil keeps the legacy
+	// 1MB inline path.
+	blobs obsstore.BlobStore
 	// passwordAttempts is this server's brute-force budget (auth_password.go).
 	passwordAttempts *passwordLimiter
 }
@@ -123,6 +127,9 @@ func NewWithNotificationsAndBackground(ctx context.Context, s *repo.Store, e *en
 
 func newWithNotifications(s *repo.Store, e *engine.Engine, syncSvc *tracker.Service, basicUser, basicPass string, notifications *notification.Service, bg *Background, startBackground func(*assistantHandlers, *runsHandlers)) *gin.Engine {
 	d := &deps{repo: s, engine: e, sync: syncSvc, authClient: auth.NewClientFromEnv(), passwordAttempts: newPasswordLimiter()}
+	if e != nil {
+		d.blobs = e.BlobStore()
+	}
 	if trustGatewayIdentityHeaders() && strings.TrimSpace(os.Getenv("AGENTFLOW_IDENTITY_HEADER_SECRET")) == "" {
 		log.Printf("warning: AGENTFLOW_TRUST_IDENTITY_HEADERS is on without AGENTFLOW_IDENTITY_HEADER_SECRET; any loopback caller without forwarding headers, including a proxy that passes client headers through, can sign in as any user")
 	}
@@ -599,6 +606,7 @@ func newWithNotifications(s *repo.Store, e *engine.Engine, syncSvc *tracker.Serv
 	g.GET("/api/runners/tasks/:id/events", api.runners.runnerTaskEventsOut)
 	g.POST("/api/runners/tasks/:id/events", api.runners.runnerTaskEventsIngest)
 	g.POST("/api/runners/tasks/:id/complete", api.runners.runnerTaskComplete)
+	g.POST("/api/runners/tasks/:id/artifacts", api.runners.runnerTaskArtifactUpload)
 	g.GET("/api/runners/tasks/:id/control", api.runners.runnerTaskControl)
 	g.PUT("/api/runners/runtimes", api.runners.runnerRuntimeStatus)
 	g.POST("/api/runners/runtimes", api.runners.runnerRuntimeStatus)

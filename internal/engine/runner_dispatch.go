@@ -244,6 +244,7 @@ func (e *Engine) dispatchRunnerTask(ctx context.Context, runnerID string, run do
 			invocation.OutputFiles = append(invocation.OutputFiles, path)
 		}
 		invocation.RecoverOutputs = normalizeExecutionScope(node.ExecutionScope) != domain.ExecutionScopeRepositories
+		invocation.LargeArtifacts = e.largeArtifactsEnabled()
 	}
 	invocation.MCPCallServers = e.resolveScriptMCPAssets(run.ExecutionContext.ProjectID, run.ExecutionContext.ResponsibleUserID).MCPServers
 	task := domain.RunnerTask{
@@ -416,6 +417,7 @@ func (e *Engine) dispatchRunnerScript(ctx context.Context, runnerID string, run 
 			}
 		}
 		invocation.RecoverOutputs = strings.TrimSpace(artifactDirectory) == ""
+		invocation.LargeArtifacts = e.largeArtifactsEnabled()
 	}
 	task := domain.RunnerTask{
 		ID:          fmt.Sprintf("rt-%d-%s-script", time.Now().UnixNano(), safeRunnerPath(nodeID)),

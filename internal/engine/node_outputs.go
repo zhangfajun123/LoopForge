@@ -1,15 +1,19 @@
 package engine
 
 import (
+	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"agentflow/internal/domain"
+	"agentflow/internal/obsstore"
 )
 
 var (
@@ -46,6 +50,29 @@ func (w workspaceOutputs) repositoryPatch(dir string) ([]byte, error) {
 	return collectRepositoryPatch(repositoryWorkspacePath(string(w), domain.RepositoryContext{WorkspaceDir: dir}))
 }
 
+// openLarge streams an oversized local output. The control plane owns this
+// workspace, so the body can be piped straight into OBS without first adding
+// 1MB+ to memory.
+func (w workspaceOutputs) openLarge(rel string) (io.ReadCloser, int64, error) {
+	full := filepath.Join(string(w), filepath.FromSlash(rel))
+	info, err := os.Stat(full)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, 0, errOutputNotRegular
+	}
+	file, err := os.Open(full)
+	if err != nil {
+		return nil, 0, err
+	}
+	return file, info.Size(), nil
+}
+
+func (w workspaceOutputs) uploadedArtifact(rel string) (domain.ArtifactUpload, bool) {
+	return domain.ArtifactUpload{}, false
+}
+
 // reportedOutputs holds what the execution machine reported for the current
 // invocation of one node. It replaces the control-plane copy of the
 // workspace for artifact validation, registration, and the gate result.
@@ -55,6 +82,7 @@ type reportedOutputs struct {
 	mu        sync.Mutex
 	files     map[string]string
 	tooLarge  map[string]bool
+	uploads   map[string]domain.ArtifactUpload
 	patches   map[string]string
 	recovered []string
 }
@@ -72,6 +100,7 @@ func (r *reportedOutputs) reset() {
 	defer r.mu.Unlock()
 	r.files = map[string]string{}
 	r.tooLarge = map[string]bool{}
+	r.uploads = map[string]domain.ArtifactUpload{}
 	r.patches = map[string]string{}
 	r.recovered = nil
 }
@@ -91,6 +120,12 @@ func (r *reportedOutputs) absorb(outputs *domain.RunnerTaskOutputs) {
 	for _, rel := range outputs.TooLarge {
 		r.tooLarge[rel] = true
 		delete(r.files, rel)
+	}
+	for rel, upload := range outputs.Uploads {
+		if strings.TrimSpace(upload.StorageKey) == "" {
+			continue
+		}
+		r.uploads[rel] = upload
 	}
 	for dir, patch := range outputs.Patches {
 		r.patches[dir] = patch
@@ -112,11 +147,28 @@ func (r *reportedOutputs) readFile(rel string) ([]byte, error) {
 	if r.tooLarge[rel] {
 		return nil, errOutputTooLarge
 	}
+	if upload, ok := r.uploads[rel]; ok && strings.TrimSpace(upload.StorageKey) != "" {
+		return nil, errOutputTooLarge
+	}
 	content, ok := r.files[rel]
 	if !ok {
 		return nil, &fs.PathError{Op: "read", Path: rel, Err: fs.ErrNotExist}
 	}
 	return []byte(content), nil
+}
+
+// uploadedArtifact reports where the runner streamed an oversized output.
+// The body is never carried in the task JSON, so the control plane reads it
+// straight from OBS instead.
+func (r *reportedOutputs) uploadedArtifact(rel string) (domain.ArtifactUpload, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	upload, ok := r.uploads[rel]
+	return upload, ok
+}
+
+func (r *reportedOutputs) openLarge(rel string) (io.ReadCloser, int64, error) {
+	return nil, 0, &fs.PathError{Op: "open", Path: rel, Err: fs.ErrNotExist}
 }
 
 func (r *reportedOutputs) repositoryPatch(dir string) ([]byte, error) {
@@ -165,6 +217,10 @@ func artifactOutputFiles(run domain.Run, node domain.WorkflowNode) []string {
 // write instead of being written into a control-plane workspace. Repository
 // patches are never applied; the runner's checkout is the source of truth.
 func runnerArtifactInputs(wf domain.WorkflowDefinition, node domain.WorkflowNode, run domain.Run) (string, []domain.RunnerInputFile) {
+	return runnerArtifactInputsWithBlobs(wf, node, run, nil)
+}
+
+func runnerArtifactInputsWithBlobs(wf domain.WorkflowDefinition, node domain.WorkflowNode, run domain.Run, blobs obsstore.BlobStore) (string, []domain.RunnerInputFile) {
 	sources := map[string]bool{}
 	for _, edge := range wf.Edges {
 		if edge.Target == node.ID {
@@ -182,7 +238,18 @@ func runnerArtifactInputs(wf domain.WorkflowDefinition, node domain.WorkflowNode
 			continue
 		}
 		rel := artifactInputRelPath(run, artifact)
-		files = append(files, domain.RunnerInputFile{Path: rel, Content: artifact.Content})
+		input := domain.RunnerInputFile{Path: rel, Content: artifact.Content}
+		if artifact.StorageBackend == "obs" {
+			input.Content = ""
+			input.SHA256 = artifact.SHA256
+			input.Size = artifact.Size
+			if blobs != nil && blobs.Enabled() {
+				if url, err := blobs.PresignGet(context.Background(), artifact.StorageKey, 5*time.Minute); err == nil {
+					input.URL = url
+				}
+			}
+		}
+		files = append(files, input)
 		writeInputManifestEntry(&manifest, artifact, rel)
 	}
 	handoffManifest, handoffFiles := sopHandoffInputs(run)

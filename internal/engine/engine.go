@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"agentflow/internal/domain"
+	"agentflow/internal/obsstore"
 	"agentflow/internal/preview"
 	"agentflow/internal/repo"
 	"agentflow/internal/runtime"
@@ -83,6 +84,8 @@ type Engine struct {
 
 	preview *preview.Service
 
+	blobs obsstore.BlobStore
+
 	obsMu      sync.Mutex
 	obsPending []pendingObservation
 	obsKick    chan struct{}
@@ -149,6 +152,17 @@ func (e *Engine) SetPreview(svc *preview.Service) {
 }
 
 func (e *Engine) Preview() *preview.Service { return e.preview }
+
+// SetBlobStore enables OBS-backed large artifacts. A nil store keeps the
+// legacy 1MB inline limit everywhere.
+func (e *Engine) SetBlobStore(store obsstore.BlobStore) { e.blobs = store }
+
+// BlobStore returns the configured large-object store (nil when disabled).
+func (e *Engine) BlobStore() obsstore.BlobStore { return e.blobs }
+
+func (e *Engine) largeArtifactsEnabled() bool {
+	return e.blobs != nil && e.blobs.Enabled()
+}
 
 func (e *Engine) OnRunnerTaskCompleted(task domain.RunnerTask) {
 	if e.preview != nil {

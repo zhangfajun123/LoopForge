@@ -579,6 +579,9 @@ func (d *Daemon) executeTask(ctx context.Context, task domain.RunnerTask) {
 	}
 
 	releaseGate()
+	if result.outputs != nil && task.Invocation != nil && task.Invocation.LargeArtifacts {
+		d.uploadLargeArtifacts(ctx, task, result.outputs)
+	}
 	completeCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	req := CompleteRequest{Status: result.status, Result: result.result, Error: result.errMsg, Artifacts: artifacts, Outputs: result.outputs}
@@ -590,6 +593,42 @@ func (d *Daemon) executeTask(ctx context.Context, task domain.RunnerTask) {
 		log.Printf("task %s complete report: %v", task.ID, err)
 	}
 	log.Printf("task %s finished (%s)", task.ID, result.status)
+}
+
+// uploadLargeArtifacts streams outputs above the inline limit to the control
+// plane, which stores them in OBS and returns the object metadata. Failures
+// leave the path in TooLarge so the server-side contract still reports it.
+func (d *Daemon) uploadLargeArtifacts(ctx context.Context, task domain.RunnerTask, outputs *domain.RunnerTaskOutputs) {
+	if len(outputs.TooLarge) == 0 {
+		return
+	}
+	workspace := d.taskWorkspace(task)
+	for _, rel := range outputs.TooLarge {
+		if !domain.SafeWorkspaceRelPath(rel) {
+			continue
+		}
+		full := filepath.Join(workspace, filepath.FromSlash(rel))
+		file, err := os.Open(full)
+		if err != nil {
+			log.Printf("task %s artifact upload %s: %v", task.ID, rel, err)
+			continue
+		}
+		info, err := file.Stat()
+		if err != nil || !info.Mode().IsRegular() {
+			file.Close()
+			continue
+		}
+		upload, err := d.client.UploadArtifact(ctx, task.ID, rel, file, info.Size())
+		file.Close()
+		if err != nil {
+			log.Printf("task %s artifact upload %s: %v", task.ID, rel, err)
+			continue
+		}
+		if outputs.Uploads == nil {
+			outputs.Uploads = map[string]domain.ArtifactUpload{}
+		}
+		outputs.Uploads[rel] = upload
+	}
 }
 
 func (d *Daemon) executeRunCleanup(ctx context.Context, task domain.RunnerTask) execResult {

@@ -1,13 +1,17 @@
 package runner
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"agentflow/internal/domain"
 	"agentflow/internal/gitwork"
@@ -75,10 +79,52 @@ func writeInputFile(workspace string, input domain.RunnerInputFile) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := os.WriteFile(target, []byte(input.Content), 0o600); err != nil {
+	if err := writeInputBody(target, input); err != nil {
+		return err
+	}
+	if err := os.Chmod(target, 0o444); err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeInputBody writes inline content or streams a presigned OBS URL for
+// large upstream artifacts, verifying the recorded SHA-256.
+func writeInputBody(target string, input domain.RunnerInputFile) error {
+	if strings.TrimSpace(input.URL) == "" {
+		if err := os.WriteFile(target, []byte(input.Content), 0o600); err != nil {
+			return fmt.Errorf("write input %s: %w", input.Path, err)
+		}
+		return nil
+	}
+	client := &http.Client{Timeout: 10 * time.Minute}
+	resp, err := client.Get(input.URL)
+	if err != nil {
+		return fmt.Errorf("download input %s: %w", input.Path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("download input %s: status %d", input.Path, resp.StatusCode)
+	}
+	file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
 		return fmt.Errorf("write input %s: %w", input.Path, err)
 	}
-	return os.Chmod(target, 0o444)
+	digest := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(file, digest), resp.Body); err != nil {
+		file.Close()
+		_ = os.Remove(target)
+		return fmt.Errorf("download input %s: %w", input.Path, err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(target)
+		return err
+	}
+	if want := strings.TrimSpace(input.SHA256); want != "" && !strings.EqualFold(fmt.Sprintf("%x", digest.Sum(nil)), want) {
+		_ = os.Remove(target)
+		return fmt.Errorf("download input %s: checksum mismatch", input.Path)
+	}
+	return nil
 }
 
 // collectTaskOutputs reports the requested output files, the

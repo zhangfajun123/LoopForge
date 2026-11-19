@@ -472,24 +472,28 @@ type RunnerInvocation struct {
 	// paths resolved by the control plane. RecoverOutputs lets the runner
 	// move a missing output file found elsewhere in the workspace into
 	// place, as the control plane does for its own sandboxes.
-	ReportOutputs                bool     `json:"reportOutputs,omitempty"`
-	OutputFiles                  []string `json:"outputFiles,omitempty"`
-	RecoverOutputs               bool     `json:"recoverOutputs,omitempty"`
-	HumanContext                 string   `json:"humanContext,omitempty"`
-	CredentialSource             string   `json:"credentialSource,omitempty"`
-	CodeBuddyAPIKey              string   `json:"codebuddyApiKey,omitempty"`
-	CodeBuddyInternetEnvironment string   `json:"codebuddyInternetEnvironment,omitempty"`
-	CodexAPIKey                  string   `json:"codexApiKey,omitempty"`
-	CodexBaseURL                 string   `json:"codexBaseUrl,omitempty"`
+	ReportOutputs  bool     `json:"reportOutputs,omitempty"`
+	OutputFiles    []string `json:"outputFiles,omitempty"`
+	RecoverOutputs bool     `json:"recoverOutputs,omitempty"`
+	// LargeArtifacts asks the runner to stream oversized output files to the
+	// control-plane artifact upload endpoint instead of inlining them. When
+	// false the legacy 1MB cap stays in force.
+	LargeArtifacts               bool   `json:"largeArtifacts,omitempty"`
+	HumanContext                 string `json:"humanContext,omitempty"`
+	CredentialSource             string `json:"credentialSource,omitempty"`
+	CodeBuddyAPIKey              string `json:"codebuddyApiKey,omitempty"`
+	CodeBuddyInternetEnvironment string `json:"codebuddyInternetEnvironment,omitempty"`
+	CodexAPIKey                  string `json:"codexApiKey,omitempty"`
+	CodexBaseURL                 string `json:"codexBaseUrl,omitempty"`
 	// CodexModel is the model the platform resolved for this task. The runner
 	// applies it only when the invocation does not already name one, so a
 	// self-hosted gateway never receives Codex's built-in default model name.
-	CodexModel                   string   `json:"codexModel,omitempty"`
-	ClaudeCodeAPIKey             string   `json:"claudeCodeApiKey,omitempty"`
-	ClaudeCodeBaseURL            string   `json:"claudeCodeBaseUrl,omitempty"`
-	AgentCLIAPIKey               string   `json:"agentCliApiKey,omitempty"`
-	AgentCLIBaseURL              string   `json:"agentCliBaseUrl,omitempty"`
-	AgentCLIProtocol             string   `json:"agentCliProtocol,omitempty"`
+	CodexModel        string `json:"codexModel,omitempty"`
+	ClaudeCodeAPIKey  string `json:"claudeCodeApiKey,omitempty"`
+	ClaudeCodeBaseURL string `json:"claudeCodeBaseUrl,omitempty"`
+	AgentCLIAPIKey    string `json:"agentCliApiKey,omitempty"`
+	AgentCLIBaseURL   string `json:"agentCliBaseUrl,omitempty"`
+	AgentCLIProtocol  string `json:"agentCliProtocol,omitempty"`
 	// AgentCLIModels is the responsible user's saved catalog for the agent
 	// CLI; Cursor resolves the model's effort to an ID from it.
 	AgentCLIModels []CLIModel `json:"agentCliModels,omitempty"`
@@ -569,9 +573,22 @@ func (inv *RunnerInvocation) GitSSHRemotes() []string {
 }
 
 // RunnerInputFile is one file written into the task workspace before a run.
+// Small inputs carry Content inline; large object-store artifacts carry a
+// short-lived URL and their SHA-256 instead so the JSON payload stays small.
 type RunnerInputFile struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+	URL     string `json:"url,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+}
+
+// ArtifactUpload is where the control plane stored an oversized artifact the
+// runner streamed to it.
+type ArtifactUpload struct {
+	StorageKey string `json:"storageKey"`
+	SHA256     string `json:"sha256"`
+	Size       int64  `json:"size"`
 }
 
 // RunnerTaskOutputs is what a runner reports about the task workspace after
@@ -581,6 +598,10 @@ type RunnerTaskOutputs struct {
 	// files and non-regular files are absent; oversized ones are in TooLarge.
 	Files    map[string]string `json:"files,omitempty"`
 	TooLarge []string          `json:"tooLarge,omitempty"`
+	// Uploads maps an oversized path to the object the runner streamed to the
+	// control plane when LargeArtifacts was enabled. Its presence removes the
+	// legacy 1MB failure for that path.
+	Uploads map[string]ArtifactUpload `json:"uploads,omitempty"`
 	// Patches maps a repository checkout dir ("" is the workspace root) to
 	// its repository-patch inventory. Unchanged checkouts are absent.
 	Patches map[string]string `json:"patches,omitempty"`

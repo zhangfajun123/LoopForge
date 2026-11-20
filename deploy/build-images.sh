@@ -45,9 +45,9 @@ UTC=$(date -u +%Y%m%d%H%M)UTC
 DATE=$(date -u +%Y%m%d)
 SUFFIX=""; [[ $HERMES == 1 ]] && SUFFIX="-hermes"
 
-RUNTIME_LOCAL="loopforge:runtime-$DATE"
+RUNTIME_LOCAL="${RUNTIME_IMAGE:-loopforge:runtime-$DATE}"   # 可用 RUNTIME_IMAGE=… 指定已有底座
 RUNTIME_REMOTE="$REG/$NS/$REPO:runtime-$DATE"
-CLIS_LOCAL="loopforge:clis$SUFFIX-$SHA-$UTC"
+CLIS_LOCAL="${CLIS_IMAGE:-loopforge:clis$SUFFIX-$SHA-$UTC}"  # 可用 CLIS_IMAGE=… 复用已有 CLI 层
 CLIS_REMOTE="$REG/$NS/$REPO:clis$SUFFIX-$SHA-$UTC"
 APP_LOCAL="loopforge:app-$SHA-$UTC"
 APP_REMOTE="$REG/$NS/$REPO:app-$SHA-$UTC"

@@ -104,15 +104,19 @@ func binaryDownloadPlatform(c *gin.Context) (targetOS, targetArch string, ok boo
 		targetArch = "amd64"
 	}
 	switch targetOS {
-	case "darwin", "linux":
+	case "darwin", "linux", "windows":
 	default:
-		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported os %q (darwin, linux)", targetOS)})
+		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported os %q (darwin, linux, windows)", targetOS)})
 		return "", "", false
 	}
 	switch targetArch {
 	case "amd64", "arm64":
 	default:
 		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported arch %q (amd64, arm64)", targetArch)})
+		return "", "", false
+	}
+	if targetOS == "windows" && targetArch != "amd64" {
+		c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("unsupported arch %q for windows (amd64)", targetArch)})
 		return "", "", false
 	}
 	return targetOS, targetArch, true

@@ -25,7 +25,7 @@ func assistantAgentCLIModel(kind, model string, cred runtime.ProviderCredential)
 			return id
 		}
 	}
-	if catalog, ok := executorModelCatalogs()[kind]; ok {
+	if catalog, ok := executorModelCatalogs("")[kind]; ok {
 		return strings.TrimSpace(catalog.Default)
 	}
 	return ""

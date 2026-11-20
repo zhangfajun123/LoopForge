@@ -165,7 +165,7 @@ func (s *dockerSandbox) Exec(ctx context.Context, command CommandSpec, sink Even
 
 func (s *dockerSandbox) execOnce(ctx context.Context, command CommandSpec, sink EventSink) (out string, err error) {
 	args := []string{"exec"}
-	if command.Stdin != nil {
+	if command.Stdin != nil || isManagedClaude(command) {
 		args = append(args, "-i")
 	}
 	for _, environment := range appendEnvironment(nil, s.profile.Environment, command.environment) {
@@ -202,7 +202,7 @@ cd "$1" && shift && exec "$@"`, "conversation", command.WorkingDir}, dropShellLo
 	args = append(args, argv...)
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Stdin = command.Stdin
-	return runCommand(cmd, sink)
+	return runCommand(cmd, sink, command)
 }
 
 // dockerWorkspaceExecArgv runs argv inside /workspace without docker exec -w.
@@ -219,7 +219,7 @@ func dockerWorkspaceExecArgv(argv []string) []string {
 }
 
 const dockerMCPCallLaunch = `cd /workspace || exit
-if [ -x /workspace/.agentflow/runtime/bin/agentflow ]; then
+if [ -x /workspace/.agentflow/runtime/bin/agentflow-helper ]; then
   PATH=/workspace/.agentflow/runtime/bin:$PATH
   export PATH
 fi
@@ -707,28 +707,33 @@ func (s *dockerSandbox) start(ctx context.Context, recreate bool) error {
 	// Native installs own private (0700) workspaces as the service user.
 	// A root image without DAC capabilities cannot access another UID's bind.
 	// Run default/root images as that user; retain explicit non-root image users.
-	if os.Geteuid() != 0 {
+	uid, gid, setUser := dockerHostIdentity()
+	if setUser {
 		configured, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format", "{{.Config.User}}", image).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("inspect sandbox image user: %w: %s", err, strings.TrimSpace(string(configured)))
 		}
 		user, _, _ := strings.Cut(strings.TrimSpace(string(configured)), ":")
 		if user == "" || user == "root" || user == "0" {
-			args = append(args, "--user", fmt.Sprintf("%d:%d", os.Geteuid(), os.Getegid()))
+			args = append(args, "--user", fmt.Sprintf("%d:%d", uid, gid))
 		}
 	}
-	if network := strings.TrimSpace(os.Getenv("AGENTFLOW_DOCKER_NETWORK")); network != "" && s.requirements.ConversationRoot == "" {
-		args = append(args, "--network", network)
-	}
-	if root := s.requirements.ConversationRoot; root != "" {
-		_, network, err := conversationDockerAccess(ctx)
+	network := strings.TrimSpace(os.Getenv("AGENTFLOW_DOCKER_NETWORK"))
+	if s.requirements.ConversationRoot != "" || s.requirements.RunnerLoginRelay {
+		_, relayNetwork, err := conversationDockerAccess(ctx)
 		if err != nil {
 			return err
 		}
-		if network != "" {
-			args = append(args, "--network", network)
+		if relayNetwork != "" {
+			network = relayNetwork
 		}
-		args = append(args, "--add-host", "host.docker.internal:host-gateway", "-v", root+":"+root+":ro", "-v", filepath.Join(root, "home")+":"+filepath.Join(root, "home"), "-v", workspace+":"+filepath.Join(root, "ws"))
+		args = append(args, "--add-host", "host.docker.internal:host-gateway")
+	}
+	if network != "" {
+		args = append(args, "--network", network)
+	}
+	if root := s.requirements.ConversationRoot; root != "" {
+		args = append(args, "-v", root+":"+root+":ro", "-v", filepath.Join(root, "home")+":"+filepath.Join(root, "home"), "-v", workspace+":"+filepath.Join(root, "ws"))
 		guards, err := conversationGuardMounts(root)
 		if err != nil {
 			return err

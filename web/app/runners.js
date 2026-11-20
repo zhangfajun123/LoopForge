@@ -124,6 +124,37 @@ function runnerCopyCommand(btn,text,message){
   if(!navigator.clipboard){toast('复制失败，请手动选择复制');return}
   navigator.clipboard.writeText(text).then(done).catch(()=>toast('复制失败，请手动选择复制'));
 }
+let runnerBindOs=null;
+function runnerBindApply(os){
+  runnerBindOs=os;
+  const host=location.host,origin=location.origin;
+  const quote=value=>String(value||'').replaceAll("'","''");
+  const token=state.runnerBindCode?.code||'生成中…';
+  const cfg={
+    linux:{label:'macOS / Linux',
+      bind:`(curl -fsSL --connect-timeout 5 https://${host}/runners/install.sh || curl -fsSL http://${host}/runners/install.sh) | bash -s -- --server ${host} --token ${quote(token)} --service`,
+      uninstall:`(curl -fsSL --connect-timeout 5 https://${host}/runners/install.sh || curl -fsSL http://${host}/runners/install.sh) | bash -s -- --uninstall`,
+      note:'仅主动连接平台，不开放本机端口'},
+    windows:{label:'Windows AMD64',
+      bind:`& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri '${quote(`${origin}/runners/install.ps1`)}').Content)) -Server '${quote(origin)}' -Token '${quote(token)}'`,
+      uninstall:`& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri '${quote(`${origin}/runners/install.ps1`)}').Content)) -Uninstall`,
+      note:'Windows 使用 local 本机直跑，无系统级任务隔离；交互式工作区终端暂不支持。仅接入可信仓库和工作流。'}
+  }[os]||{};
+  const platformLabel=document.querySelector('.runner-platforms');
+  const bindCommand=$('#bindCliCommand');
+  const uninstallCommand=$('#uninstallCliCommand');
+  const commandNote=document.querySelector('.runner-command-note');
+  if(platformLabel)platformLabel.textContent=cfg.label||'';
+  if(bindCommand)bindCommand.textContent=cfg.bind||'';
+  if(uninstallCommand)uninstallCommand.textContent=cfg.uninstall||'';
+  if(commandNote)commandNote.textContent=cfg.note||'';
+  document.querySelectorAll('.runner-os-switch .os-tab').forEach(btn=>{
+    const active=btn.dataset.os===os;
+    btn.classList.toggle('dark',active);btn.classList.toggle('ghost',!active);
+    btn.setAttribute('aria-selected',active?'true':'false');
+    btn.onclick=()=>runnerBindApply(btn.dataset.os);
+  });
+}
 function renderRunnersView(){
   const list=$('#runnersList');if(!list)return;
   const host=location.host;
@@ -134,22 +165,7 @@ function renderRunnersView(){
   if(tokenSpan)tokenSpan.textContent=state.runnerBindCode?.code||'生成中…';
   const platform=navigator.userAgentData?.platform||navigator.platform||navigator.userAgent||'';
   const isWindows=/windows/i.test(platform);
-  const platformLabel=document.querySelector('.runner-platforms');
-  const bindCommand=$('#bindCliCommand');
-  const uninstallCommand=$('#uninstallCliCommand');
-  const commandNote=document.querySelector('.runner-command-note');
-  if(isWindows){
-    const origin=location.origin;
-    const quote=value=>String(value||'').replaceAll("'","''");
-    const token=state.runnerBindCode?.code||'生成中…';
-    if(platformLabel)platformLabel.textContent='Windows AMD64';
-    if(bindCommand)bindCommand.textContent=`& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri '${quote(`${origin}/runners/install.ps1`)}').Content)) -Server '${quote(origin)}' -Token '${quote(token)}'`;
-    if(uninstallCommand)uninstallCommand.textContent=`& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri '${quote(`${origin}/runners/install.ps1`)}').Content)) -Uninstall`;
-    if(commandNote)commandNote.textContent='Windows 使用 local 本机直跑，无系统级任务隔离；交互式工作区终端暂不支持。仅接入可信仓库和工作流。';
-  }else{
-    if(platformLabel)platformLabel.textContent='macOS / Linux';
-    if(commandNote)commandNote.textContent='仅主动连接平台，不开放本机端口';
-  }
+  runnerBindApply(runnerBindOs||(isWindows?'windows':'linux'));
   const copyBtn=$('#copyBindCommand');
   if(copyBtn)copyBtn.onclick=()=>{
     const text=$('#bindCliCommand')?.innerText||'';

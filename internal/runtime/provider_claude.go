@@ -79,7 +79,7 @@ func (claudeProvider) Prepare(in providerInvocation) (CommandSpec, error) {
 		argv = append(argv, "--resume", sessionID)
 	}
 	spec := CommandSpec{Argv: append(argv, positionalPrompt(in)), Provider: "claude-code", CredentialBindings: []CredentialBinding{BindClaudeCode, BindGit, BindMCP}, PrivateHome: true}
-	if in.Driver == "docker" || in.Driver == "bwrap" || in.Driver == "seatbelt" || os.Geteuid() == 0 {
+	if in.Driver == "docker" || in.Driver == "bwrap" || in.Driver == "seatbelt" || isRootUser() {
 		// Claude Code refuses bypassPermissions for root unless the process
 		// is told that an outer sandbox is the isolation boundary. Docker and
 		// the lightweight sandboxes are that boundary; a root local process is

@@ -7,7 +7,7 @@ import (
 	"embed"
 )
 
-//go:embed bind-cli.sh
+//go:embed bind-cli.sh bind-cli.ps1
 var Files embed.FS
 
 // strictHTTPSAssignment is the single line the platform rewrites before serving
@@ -20,6 +20,15 @@ const (
 // BindCLIScript returns the bind-cli.sh installer content.
 func BindCLIScript() []byte {
 	data, err := Files.ReadFile("bind-cli.sh")
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// BindCLIPowerShellScript returns the native Windows runner installer.
+func BindCLIPowerShellScript() []byte {
+	data, err := Files.ReadFile("bind-cli.ps1")
 	if err != nil {
 		return nil
 	}

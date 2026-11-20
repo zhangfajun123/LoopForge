@@ -609,7 +609,7 @@ func (p *ConversationProcessPool) start(ctx context.Context, root, workspace str
 		command.Argv[0] = binary
 	}
 	if sb == nil {
-		binary, lookupErr := exec.LookPath(command.Argv[0])
+		binary, lookupErr := LookPath(command.Argv[0])
 		if lookupErr != nil {
 			return ConversationProcessResult{}, fmt.Errorf("执行机器未安装 CLI %s：%w", command.Provider, lookupErr)
 		}

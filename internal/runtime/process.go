@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -64,15 +63,15 @@ func runCommand(cmd *exec.Cmd, sink EventSink, commands ...CommandSpec) (string,
 		sink(domain.TelemetryEvent{Category: "process", Name: "process.start_failed", Timestamp: time.Now().UTC(), Phase: "start", Level: "error", Message: err.Error()})
 	}
 	if err != nil && cmd.Process == nil {
-		if errors.Is(err, syscall.E2BIG) {
+		if argumentTooLarge(err) {
 			// Retrying with the same input fails again; name the limit so the
 			// diagnostic points at the oversized argument, not the CLI.
 			err = fmt.Errorf("%w (a single argument exceeds the ~128KiB kernel limit; pass long prompts on stdin or in a file)", err)
 		}
 		err = fmt.Errorf("%w: %w", errProcessNotStarted, err)
 	}
-	if cmd.Process != nil && cmd.SysProcAttr != nil && cmd.SysProcAttr.Setpgid {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if cmd.Process != nil && ProcessTreeConfigured(cmd) {
+		_ = SignalProcessTree(cmd.Process.Pid, true)
 	}
 	outputIncomplete := errors.Is(err, exec.ErrWaitDelay)
 	if errors.Is(err, exec.ErrWaitDelay) {
@@ -92,11 +91,8 @@ func runCommand(cmd *exec.Cmd, sink EventSink, commands ...CommandSpec) (string,
 		if state := cmd.ProcessState; state != nil {
 			attrs["pid"], attrs["exitCode"] = state.Pid(), state.ExitCode()
 			attrs["userCpuMs"], attrs["systemCpuMs"] = state.UserTime().Milliseconds(), state.SystemTime().Milliseconds()
-			if status, ok := state.Sys().(interface {
-				Signaled() bool
-				Signal() syscall.Signal
-			}); ok && status.Signaled() {
-				attrs["signal"] = status.Signal().String()
+			if signal := processExitSignal(state); signal != "" {
+				attrs["signal"] = signal
 			}
 		}
 		sink(domain.TelemetryEvent{Category: "process", Name: "process.finished", Timestamp: time.Now().UTC(), Phase: phase, Level: level, Message: commandResult(err), Attributes: attrs})

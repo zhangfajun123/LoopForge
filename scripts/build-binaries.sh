@@ -43,12 +43,15 @@ flags=(-p="$jobs" -trimpath -ldflags=-s\ -w)
 # shared dependencies compile and the links run in parallel.
 build() {
   local suffix="$1"; shift
-  local staging
+  local staging target_os binary
+  target_os="${GOOS:-$(go env GOOS)}"
   staging="$(mktemp -d "$output/.build.XXXXXX")"
   go build "${flags[@]}" -o "$staging/" "$@" || { rm -rf "$staging"; return 1; }
   local package
   for package in "$@"; do
-    mv "$staging/${package##*/}" "$output/${package##*/}$suffix"
+    binary="${package##*/}"
+    [[ "$target_os" != windows ]] || binary+=".exe"
+    mv "$staging/$binary" "$output/${package##*/}$suffix"
   done
   rmdir "$staging"
 }
@@ -63,6 +66,8 @@ if [[ $mode != platform ]]; then
       GOOS="$target_os" GOARCH="$target_arch" build "-$target_os-$target_arch" ./cmd/agentflow-runner ./cmd/agentflow-gate-mcp
     done
   done
+  printf '\nBuilding agentflow-runner and agentflow-gate-mcp (windows/amd64)…\n'
+  GOOS=windows GOARCH=amd64 build -windows-amd64 ./cmd/agentflow-runner ./cmd/agentflow-gate-mcp
 fi
 if [[ $mode != helpers ]]; then
   printf '\nBuilding agentflow for the platform…\n'

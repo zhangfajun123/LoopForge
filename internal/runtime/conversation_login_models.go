@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -59,7 +58,7 @@ func DiscoverRunnerLoginModels(ctx context.Context, provider, binary string) ([]
 	defer cancel()
 	environment := appendEnvironment(terminalBaseEnvironment(home), env, loginEnv)
 	if provider == AgentCLIAntigravity {
-		cmd := exec.CommandContext(ctx, binary, "models")
+		cmd := NewCommandContext(ctx, binary, "models")
 		cmd.Dir, cmd.Env, cmd.WaitDelay = root, environment, time.Second
 		output, err := cmd.Output()
 		if err != nil || len(output) > 2<<20 {
@@ -72,7 +71,7 @@ func DiscoverRunnerLoginModels(ctx context.Context, provider, binary string) ([]
 		return models, nil
 	}
 	if login.binding == BindClaudeCode {
-		status := exec.CommandContext(ctx, binary, "auth", "status")
+		status := NewCommandContext(ctx, binary, "auth", "status")
 		status.Dir, status.Env, status.WaitDelay = root, environment, time.Second
 		output, err := status.Output()
 		var auth struct {
@@ -82,7 +81,7 @@ func DiscoverRunnerLoginModels(ctx context.Context, provider, binary string) ([]
 			return nil, fmt.Errorf("执行机器上的 Claude Code 登录态不可用，请检查 CLI 版本和账号登录")
 		}
 	}
-	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd := NewCommandContext(ctx, append([]string{binary}, args...)...)
 	cmd.Dir, cmd.Env = root, environment
 	cmd.WaitDelay = time.Second
 	input, err := cmd.StdinPipe()

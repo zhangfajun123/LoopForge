@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -257,11 +256,13 @@ func (m *runnerLoginManager) locked(ctx context.Context, source runnerLoginSourc
 	}
 	defer file.Close()
 	for {
-		if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
-			break
-		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) && !errors.Is(err, syscall.EAGAIN) {
+		var locked bool
+		locked, err = tryFileLock(file)
+		if err != nil {
 			return runnerLoginSnapshot{}, err
+		}
+		if locked {
+			break
 		}
 		select {
 		case <-ctx.Done():
@@ -269,7 +270,7 @@ func (m *runnerLoginManager) locked(ctx context.Context, source runnerLoginSourc
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
-	defer syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+	defer unlockFileLock(file)
 	return fn(e, path+".pending")
 }
 

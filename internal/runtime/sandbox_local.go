@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 )
 
 type localSandbox struct {
@@ -47,7 +46,7 @@ func (s *localSandbox) command(ctx context.Context, command CommandSpec, base []
 	if err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("sandbox workspace missing %s: %w", workspace, err)
 	}
-	cmd := exec.CommandContext(ctx, command.Argv[0], command.Argv[1:]...)
+	cmd := NewCommandContext(ctx, command.Argv...)
 	cmd.Dir = workspace
 	cmd.Env = appendEnvironment(base, s.environment, command.environment)
 	cmd.Env = upsertEnv(cmd.Env, "PWD", workspace)
@@ -58,13 +57,7 @@ func (s *localSandbox) command(ctx context.Context, command CommandSpec, base []
 		cmd.Env = upsertEnv(cmd.Env, "PWD", command.WorkingDir)
 	}
 	if command.OwnProcessGroup {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Cancel = func() error {
-			if cmd.Process == nil {
-				return nil
-			}
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
+		ConfigureProcessTree(cmd)
 	}
 	return cmd, nil
 }

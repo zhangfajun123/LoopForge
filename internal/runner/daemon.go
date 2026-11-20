@@ -104,15 +104,22 @@ func New(cfg Config) (*Daemon, error) {
 	if cfg.ServerURL == "" {
 		return nil, errors.New("server URL is required")
 	}
-	if cfg.BootstrapToken == "" {
-		return nil, errors.New("bootstrap token is required")
-	}
 	if cfg.StatePath == "" {
 		path, err := DefaultStatePath()
 		if err != nil {
 			return nil, err
 		}
 		cfg.StatePath = path
+	}
+	if cfg.BootstrapToken == "" {
+		raw, err := os.ReadFile(cfg.StatePath)
+		if err != nil {
+			return nil, errors.New("bootstrap token or saved runner session is required")
+		}
+		var st daemonState
+		if json.Unmarshal(raw, &st) != nil || st.SessionToken == "" || (!st.ExpiresAt.IsZero() && !st.ExpiresAt.After(time.Now().Add(5*time.Minute))) {
+			return nil, errors.New("saved runner session is missing or expiring; generate a new binding code")
+		}
 	}
 	if cfg.MaxConcurrency < 1 {
 		cfg.MaxConcurrency = 1
@@ -1502,7 +1509,7 @@ func resolveCommandPath(argv []string) []string {
 	if len(argv) == 0 || argv[0] == "" || strings.ContainsRune(argv[0], os.PathSeparator) {
 		return argv
 	}
-	if resolved, err := exec.LookPath(argv[0]); err == nil {
+	if resolved, err := runtime.LookPath(argv[0]); err == nil {
 		argv[0] = resolved
 	}
 	return argv

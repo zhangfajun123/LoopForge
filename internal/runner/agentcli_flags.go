@@ -2,10 +2,11 @@ package runner
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 	stdsync "sync"
 	"time"
+
+	flowruntime "agentflow/internal/runtime"
 )
 
 // Agent CLIs drift: a flag a role depends on can disappear between the version a
@@ -99,7 +100,8 @@ func helpListsFlag(binary, subcommand, flag string) bool {
 func runCLIProbe(binary string, args ...string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
+	argv := append([]string{binary}, args...)
+	out, err := flowruntime.NewCommandContext(ctx, argv...).CombinedOutput()
 	if len(out) == 0 {
 		return ""
 	}

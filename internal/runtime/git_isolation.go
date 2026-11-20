@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
@@ -272,7 +271,7 @@ func gitIndexLockInUse(ctx context.Context, lockPath string) (inUse, confirmed b
 }
 
 func gitIndexLockInUseProc(lockPath string) (inUse, confirmed bool, err error) {
-	return gitIndexLockHeldUnder("/proc", lockPath, uint32(os.Geteuid()))
+	return gitIndexLockHeldUnder("/proc", lockPath, currentUserID())
 }
 
 // gitIndexLockHeldUnder matches open descriptors by file identity, not path:
@@ -301,7 +300,7 @@ func gitIndexLockHeldUnder(procRoot, lockPath string, self uint32) (inUse, confi
 	if err != nil {
 		return false, false, err
 	}
-	stat, ok := lock.Sys().(*syscall.Stat_t)
+	uid, ok := fileOwnerID(lock)
 	if !lock.Mode().IsRegular() || !ok {
 		return false, false, fmt.Errorf("index lock %s is not a regular file", want)
 	}
@@ -310,7 +309,7 @@ func gitIndexLockHeldUnder(procRoot, lockPath string, self uint32) (inUse, confi
 		return false, false, err
 	}
 	uncertain := false
-	foreignOwner := stat.Uid != self
+	foreignOwner := uid != self
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -320,7 +319,7 @@ func gitIndexLockHeldUnder(procRoot, lockPath string, self uint32) (inUse, confi
 		}
 		held, readErr := fdDirHoldsFile(filepath.Join(procRoot, entry.Name(), "fd"), want, lock)
 		if readErr != nil {
-			if foreignOwner && !errors.Is(readErr, os.ErrNotExist) && procMayOwnFile(filepath.Join(procRoot, entry.Name()), stat.Uid) {
+			if foreignOwner && !errors.Is(readErr, os.ErrNotExist) && procMayOwnFile(filepath.Join(procRoot, entry.Name()), uid) {
 				uncertain = true
 			}
 			continue

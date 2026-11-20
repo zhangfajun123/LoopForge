@@ -246,6 +246,10 @@ type Artifact struct {
 	Size      int64  `json:"size"`
 	SHA256    string `json:"sha256"`
 	Content   string `json:"content"`
+	// StorageBackend is "db" when Content holds the body, or "obs" when the
+	// body lives in object storage under StorageKey.
+	StorageBackend string `json:"storageBackend,omitempty"`
+	StorageKey     string `json:"storageKey,omitempty"`
 	// RepositoryDir records which run repository workspace the artifact was
 	// collected from (empty = run workspace root, where SOP deliverables live).
 	RepositoryDir string    `json:"repositoryDir,omitempty"`

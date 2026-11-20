@@ -259,6 +259,19 @@ func (h *runsHandlers) run(c *gin.Context) {
 			c.JSON(404, map[string]string{"error": "artifact not found"})
 			return
 		}
+		if artifact.StorageBackend == "obs" {
+			if h.blobs == nil || !h.blobs.Enabled() {
+				c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "artifact storage is unavailable"})
+				return
+			}
+			url, err := h.blobs.PresignGet(c.Request.Context(), artifact.StorageKey, 5*time.Minute)
+			if err != nil {
+				c.JSON(http.StatusBadGateway, map[string]string{"error": "artifact download is temporarily unavailable"})
+				return
+			}
+			c.Redirect(http.StatusFound, url)
+			return
+		}
 		c.Header("Content-Type", artifact.MediaType+"; charset=utf-8")
 		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", artifact.Name+artifactExtension(artifact.MediaType)))
 		c.Header("ETag", `"`+artifact.SHA256+`"`)

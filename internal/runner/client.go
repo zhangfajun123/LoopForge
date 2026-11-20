@@ -299,6 +299,54 @@ func (c *Client) Complete(ctx context.Context, taskID string, req CompleteReques
 	return c.do(ctx, http.MethodPost, "/runners/tasks/"+taskID+"/complete", req, nil)
 }
 
+// UploadArtifact streams one oversized output to the control plane. The body
+// never enters the task JSON, so large videos and archives stay cheap for the
+// queue while OBS holds the bytes.
+func (c *Client) UploadArtifact(ctx context.Context, taskID, rel string, body io.Reader, size int64) (domain.ArtifactUpload, error) {
+	var out domain.ArtifactUpload
+	url := c.base + "/runners/tasks/" + taskID + "/artifacts?path=" + url.QueryEscape(rel)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return out, err
+	}
+	req.ContentLength = size
+	req.Header.Set("Content-Type", "application/octet-stream")
+	if session := c.sessionToken(); session != "" {
+		req.Header.Set("Authorization", "Bearer "+session)
+	}
+	httpClient := &http.Client{Timeout: 15 * time.Minute}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	payload, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode >= 400 {
+		return out, fmt.Errorf("upload artifact %s: %s", rel, strings.TrimSpace(string(payload)))
+	}
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return out, fmt.Errorf("decode artifact upload response: %w", err)
+	}
+	return out, nil
+}
+
+// ArtifactDownloadURL asks the control plane for a fresh URL for one declared
+// OBS input. The runner calls this after claiming the task, avoiding URLs that
+// expire while a task waits in the queue.
+func (c *Client) ArtifactDownloadURL(ctx context.Context, taskID, rel string) (string, error) {
+	var out struct {
+		URL string `json:"url"`
+	}
+	path := "/runners/tasks/" + taskID + "/artifacts/input?path=" + url.QueryEscape(rel)
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(out.URL) == "" {
+		return "", fmt.Errorf("control plane returned an empty artifact URL")
+	}
+	return out.URL, nil
+}
+
 func (c *Client) UploadPreview(ctx context.Context, previewID, token string, body io.Reader) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+"/runners/previews/"+previewID+"/content", body)
 	if err != nil {

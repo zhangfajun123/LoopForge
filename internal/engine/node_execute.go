@@ -520,7 +520,7 @@ func (e *Engine) executeNode(ctx context.Context, runID string, wf domain.Workfl
 			failNode(fmt.Errorf("prepare AgentFlow control root: %w", err), nodeRejects(node))
 			return
 		}
-		artifactContext, err = materializeInputs(sb.Workspace(), wf, node, current)
+		artifactContext, err = materializeInputsWithBlobs(sb.Workspace(), wf, node, current, e.blobs)
 		if err != nil {
 			failNode(fmt.Errorf("artifact handoff: %w", err), nodeRejects(node))
 			return
@@ -920,7 +920,7 @@ func (e *Engine) executeNode(ctx context.Context, runID string, wf domain.Workfl
 			if len(recovered) > 0 {
 				e.observe(runID, node.ID, domain.TelemetryEvent{Category: "artifact", Name: "artifact.recovered", Phase: "progress", Message: "从错误写入位置收回交付物：" + strings.Join(recovered, "；")})
 			}
-			if validateErr := validateArtifactOutputs(outputs, live, effectiveNode); validateErr != nil {
+			if validateErr := validateArtifactOutputsAllow(outputs, live, effectiveNode, e.largeArtifactsEnabled()); validateErr != nil {
 				err = fmt.Errorf("artifact contract: %w", validateErr)
 			} else if len(effectiveNode.ArtifactOutputs) > 0 {
 				e.observe(runID, node.ID, domain.TelemetryEvent{Category: "artifact", Name: "artifact.contract.validated", Phase: "finish", Message: "产物契约校验通过", Attributes: map[string]any{"contracts": len(effectiveNode.ArtifactOutputs), "iteration": iteration}})
@@ -1075,7 +1075,7 @@ func (e *Engine) executeNode(ctx context.Context, runID string, wf domain.Workfl
 		}
 	}
 	current, _ = e.repo.RunState(runID)
-	artifacts, err := collectArtifactsMode(outputs, current, effectiveNode, output, false)
+	artifacts, err := collectArtifactsModeWithBlobs(outputs, current, effectiveNode, output, false, e.blobs)
 	if err != nil {
 		failNode(fmt.Errorf("artifact contract: %w", err), nodeRejects(node))
 		return

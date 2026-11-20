@@ -701,7 +701,7 @@ func (r *RunsRepo) loadRunHeavy(run *domain.Run) error {
 
 func (r *RunsRepo) loadArtifactMeta(run *domain.Run) error {
 	var rows []runArtifactRow
-	if err := r.DB.Select("id", "run_id", "node_id", "attempt", "name", "path", "media_type", "size_bytes", "sha256", "created_at").
+	if err := r.DB.Select("id", "run_id", "node_id", "attempt", "name", "path", "media_type", "size_bytes", "sha256", "storage_backend", "storage_key", "created_at").
 		Where("run_id = ?", run.ID).Find(&rows).Error; err != nil {
 		return err
 	}
@@ -800,6 +800,7 @@ func artifactFromRow(row runArtifactRow, withContent bool) domain.Artifact {
 		ID: row.ID, RunID: row.RunID, NodeID: row.NodeID, Attempt: row.Attempt,
 		Name: row.Name, Path: row.Path, MediaType: row.MediaType, Size: row.SizeBytes,
 		SHA256: row.SHA256, RepositoryDir: row.RepositoryDir,
+		StorageBackend: row.StorageBackend, StorageKey: row.StorageKey,
 	}
 	if withContent {
 		art.Content = row.Content
@@ -807,7 +808,19 @@ func artifactFromRow(row runArtifactRow, withContent bool) domain.Artifact {
 	if row.Created != nil {
 		art.CreatedAt = *row.Created
 	}
+	if art.StorageBackend == "" {
+		art.StorageBackend = "db"
+	}
 	return art
+}
+
+// artifactStorageBackend keeps legacy artifacts explicitly on the inline
+// backend so the column never loses its meaning for older writers.
+func artifactStorageBackend(art domain.Artifact) string {
+	if backend := strings.TrimSpace(art.StorageBackend); backend != "" {
+		return backend
+	}
+	return "db"
 }
 
 func (r *RunsRepo) Artifact(runID, artifactID string) (domain.Artifact, bool) {
@@ -1069,7 +1082,7 @@ func (r *RunsRepo) writeRunOnce(run domain.Run, lockKey string, expectedRevision
 				"id": id, "run_id": run.ID, "node_id": art.NodeID, "attempt": art.Attempt,
 				"name": art.Name, "path": art.Path, "media_type": art.MediaType,
 				"size_bytes": art.Size, "sha256": art.SHA256, "repository_dir": art.RepositoryDir,
-				"content": art.Content, "created_at": timePtr(art.CreatedAt),
+				"content": art.Content, "storage_backend": artifactStorageBackend(art), "storage_key": art.StorageKey, "created_at": timePtr(art.CreatedAt),
 			}); err != nil {
 				return err
 			}

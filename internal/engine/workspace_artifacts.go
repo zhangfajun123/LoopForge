@@ -40,6 +40,11 @@ func archivedWorkspaceFiles(run domain.Run, executingNode string) []domain.Works
 		if a.Name == "repository-patch" || excluded[a.NodeID] || syntheticResults[a.NodeID] && a.Name == "result" && a.Path == "result.md" {
 			continue
 		}
+		// Object-backed bodies are not in the row; restoring an empty file
+		// would silently corrupt the workspace snapshot.
+		if a.StorageBackend == "obs" {
+			continue
+		}
 		if executingNode != "" && run.WorkflowSnapshot.CollaborationMode != "group" {
 			if n := run.Nodes[a.NodeID]; n == nil || n.Status != "succeeded" {
 				continue

@@ -412,18 +412,20 @@ type runLogRow struct {
 func (runLogRow) TableName() string { return "run_logs" }
 
 type runArtifactRow struct {
-	ID            string     `gorm:"column:id;primaryKey;size:64"`
-	RunID         string     `gorm:"column:run_id;index:idx_artifacts_run;size:64"`
-	NodeID        string     `gorm:"column:node_id;size:64"`
-	Attempt       int        `gorm:"column:attempt"`
-	Name          string     `gorm:"column:name;size:128"`
-	Path          string     `gorm:"column:path;size:512"`
-	MediaType     string     `gorm:"column:media_type;size:128"`
-	SizeBytes     int64      `gorm:"column:size_bytes"`
-	SHA256        string     `gorm:"column:sha256;size:64"`
-	RepositoryDir string     `gorm:"column:repository_dir;size:128"`
-	Content       string     `gorm:"column:content;type:text"`
-	Created       *time.Time `gorm:"column:created_at"`
+	ID             string     `gorm:"column:id;primaryKey;size:64"`
+	RunID          string     `gorm:"column:run_id;index:idx_artifacts_run;size:64"`
+	NodeID         string     `gorm:"column:node_id;size:64"`
+	Attempt        int        `gorm:"column:attempt"`
+	Name           string     `gorm:"column:name;size:128"`
+	Path           string     `gorm:"column:path;size:512"`
+	MediaType      string     `gorm:"column:media_type;size:128"`
+	SizeBytes      int64      `gorm:"column:size_bytes"`
+	SHA256         string     `gorm:"column:sha256;size:64"`
+	RepositoryDir  string     `gorm:"column:repository_dir;size:128"`
+	Content        string     `gorm:"column:content;type:text"`
+	StorageBackend string     `gorm:"column:storage_backend;size:16;default:db"`
+	StorageKey     string     `gorm:"column:storage_key;size:512;default:''"`
+	Created        *time.Time `gorm:"column:created_at"`
 }
 
 func (runArtifactRow) TableName() string { return "run_artifacts" }

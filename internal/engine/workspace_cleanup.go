@@ -317,6 +317,9 @@ func (e *Engine) DeleteRun(runID string) error {
 	if run.HasActiveNode() {
 		return fmt.Errorf("运行 %s 仍有未结束的节点，请先停止后再删除", runID)
 	}
+	if len(runOBSArtifactKeys(run)) > 0 && (e.blobs == nil || !e.blobs.Enabled()) {
+		return fmt.Errorf("cannot delete run %s while OBS artifact storage is unavailable", runID)
+	}
 	token, err := e.beginWorkspaceUseAfterCleanup(context.Background(), runID)
 	if err != nil {
 		return err
@@ -345,7 +348,44 @@ func (e *Engine) DeleteRun(runID string) error {
 	if err := e.releaseRunEnvironment(runID, true); err != nil {
 		return fmt.Errorf("destroy run sandbox: %w", err)
 	}
-	return e.repo.DeleteRun(runID)
+	if err := e.repo.DeleteRun(runID); err != nil {
+		return err
+	}
+	e.deleteRunArtifactBlobs(run)
+	return nil
+}
+
+// deleteRunArtifactBlobs removes objects after the run's database rows have
+// been deleted. Cleanup is best-effort because the run deletion is already
+// committed; failures are logged with the key so operators can reconcile
+// them or rely on the bucket's lifecycle policy.
+func (e *Engine) deleteRunArtifactBlobs(run domain.Run) {
+	keys := runOBSArtifactKeys(run)
+	if len(keys) == 0 {
+		return
+	}
+	for _, key := range keys {
+		if err := e.blobs.Delete(context.Background(), key); err != nil {
+			log.Printf("run %s deleted but OBS artifact cleanup failed for %s: %v", run.ID, key, err)
+		}
+	}
+}
+
+func runOBSArtifactKeys(run domain.Run) []string {
+	var keys []string
+	seen := map[string]struct{}{}
+	for _, artifact := range run.Artifacts {
+		key := strings.TrimSpace(artifact.StorageKey)
+		if artifact.StorageBackend != "obs" || key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func (e *Engine) settleDeletedRunTasks(run domain.Run) error {

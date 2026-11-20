@@ -1,13 +1,18 @@
 package runner
 
 import (
+	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"agentflow/internal/domain"
 	"agentflow/internal/gitwork"
@@ -18,8 +23,17 @@ import (
 // resolved for this node and removes a gate result left by an earlier
 // invocation, so the engine never reads a stale terminal decision.
 func prepareInvocationWorkspace(workspace string, inv *domain.RunnerInvocation) error {
+	return prepareInvocationWorkspaceWithResolver(context.Background(), workspace, inv, nil)
+}
+
+// prepareInvocationWorkspaceWithResolver resolves object-store inputs only
+// when the leased task starts, so queued tasks never persist expiring URLs.
+func prepareInvocationWorkspaceWithResolver(ctx context.Context, workspace string, inv *domain.RunnerInvocation, resolveURL func(context.Context, string) (string, error)) error {
 	if inv == nil {
 		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	// Parallel branches consuming the same upstream artifact write the same
 	// input file; chmod/write/chmod must not interleave.
@@ -37,7 +51,20 @@ func prepareInvocationWorkspace(workspace string, inv *domain.RunnerInvocation) 
 		}
 	}
 	for _, input := range inv.Inputs {
-		if err := writeInputFile(workspace, input); err != nil {
+		if strings.TrimSpace(input.StorageKey) != "" {
+			if resolveURL == nil {
+				return fmt.Errorf("resolve input %s: no artifact URL resolver is configured", input.Path)
+			}
+			url, err := resolveURL(ctx, input.Path)
+			if err != nil {
+				return fmt.Errorf("resolve input %s: %w", input.Path, err)
+			}
+			input.URL = url
+			if strings.TrimSpace(input.URL) == "" {
+				return fmt.Errorf("resolve input %s: server returned an empty URL", input.Path)
+			}
+		}
+		if err := writeInputFileContext(ctx, workspace, input); err != nil {
 			return err
 		}
 	}
@@ -58,6 +85,10 @@ func lockInvocationWorkspace(workspace string) func() {
 }
 
 func writeInputFile(workspace string, input domain.RunnerInputFile) error {
+	return writeInputFileContext(context.Background(), workspace, input)
+}
+
+func writeInputFileContext(ctx context.Context, workspace string, input domain.RunnerInputFile) error {
 	if !domain.SafeWorkspaceRelPath(input.Path) || !strings.HasPrefix(input.Path, ".agentflow/inputs/") {
 		return fmt.Errorf("unsafe input path %q", input.Path)
 	}
@@ -75,10 +106,71 @@ func writeInputFile(workspace string, input domain.RunnerInputFile) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := os.WriteFile(target, []byte(input.Content), 0o600); err != nil {
+	if err := writeInputBody(ctx, target, input); err != nil {
+		return err
+	}
+	if err := os.Chmod(target, 0o444); err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeInputBody writes inline content or streams a presigned OBS URL for
+// large upstream artifacts, verifying the recorded SHA-256.
+func writeInputBody(ctx context.Context, target string, input domain.RunnerInputFile) error {
+	if strings.TrimSpace(input.URL) == "" {
+		content := []byte(input.Content)
+		if input.Size > 0 && int64(len(content)) != input.Size {
+			return fmt.Errorf("write input %s: size mismatch (got %d, want %d)", input.Path, len(content), input.Size)
+		}
+		if want := strings.TrimSpace(input.SHA256); want != "" {
+			sum := sha256.Sum256(content)
+			if !strings.EqualFold(fmt.Sprintf("%x", sum), want) {
+				return fmt.Errorf("write input %s: checksum mismatch", input.Path)
+			}
+		}
+		if err := os.WriteFile(target, content, 0o600); err != nil {
+			return fmt.Errorf("write input %s: %w", input.Path, err)
+		}
+		return nil
+	}
+	client := &http.Client{Timeout: 10 * time.Minute}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, input.URL, nil)
+	if err != nil {
+		return fmt.Errorf("download input %s: %w", input.Path, err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download input %s: %w", input.Path, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("download input %s: status %d", input.Path, resp.StatusCode)
+	}
+	file, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
 		return fmt.Errorf("write input %s: %w", input.Path, err)
 	}
-	return os.Chmod(target, 0o444)
+	digest := sha256.New()
+	written, err := io.Copy(io.MultiWriter(file, digest), resp.Body)
+	if err != nil {
+		file.Close()
+		_ = os.Remove(target)
+		return fmt.Errorf("download input %s: %w", input.Path, err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(target)
+		return err
+	}
+	if input.Size > 0 && written != input.Size {
+		_ = os.Remove(target)
+		return fmt.Errorf("download input %s: size mismatch (got %d, want %d)", input.Path, written, input.Size)
+	}
+	if want := strings.TrimSpace(input.SHA256); want != "" && !strings.EqualFold(fmt.Sprintf("%x", digest.Sum(nil)), want) {
+		_ = os.Remove(target)
+		return fmt.Errorf("download input %s: checksum mismatch", input.Path)
+	}
+	return nil
 }
 
 // collectTaskOutputs reports the requested output files, the

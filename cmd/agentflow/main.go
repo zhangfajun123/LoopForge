@@ -21,6 +21,7 @@ import (
 	"agentflow/internal/httpapi"
 	"agentflow/internal/managedcli"
 	"agentflow/internal/notification"
+	"agentflow/internal/obsstore"
 	"agentflow/internal/preview"
 	"agentflow/internal/repo"
 	"agentflow/internal/runtime"
@@ -172,6 +173,7 @@ func main() {
 		Required: strings.EqualFold(strings.TrimSpace(os.Getenv("AGENTFLOW_LOCAL_EXECUTION")), "false"),
 	})
 	attachPreviewStore(e, s)
+	attachOBSStore(e)
 	log.Printf("engine instance=%s role=%s execute_runs=%t run_lease_ttl=%s", instanceID, role, executeRuns, leaseTTL)
 	claimCtx, stopClaim := context.WithCancel(context.Background())
 	defer stopClaim()
@@ -407,6 +409,24 @@ func resolveWorkspaceRoot(override string) (string, error) {
 		return "", fmt.Errorf("resolve default sandbox workspace root: user home is empty")
 	}
 	return filepath.Join(home, ".agentflow", "workspace"), nil
+}
+
+// attachOBSStore enables large run artifacts when the OBS binding is fully
+// configured. Credentials come from the environment only and never reach the
+// log, database or repository.
+func attachOBSStore(e *engine.Engine) {
+	cfg := obsstore.LoadConfig()
+	if !cfg.Enabled() {
+		log.Printf("run artifact OBS storage: disabled (1MB inline limit)")
+		return
+	}
+	store, err := obsstore.New(cfg)
+	if err != nil {
+		log.Printf("run artifact OBS storage: disabled (%v)", err)
+		return
+	}
+	e.SetBlobStore(store)
+	log.Printf("run artifact OBS storage: enabled endpoint=%s bucket=%s", cfg.Endpoint, cfg.Bucket)
 }
 
 func attachPreviewStore(e *engine.Engine, s *repo.Store) {

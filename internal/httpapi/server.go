@@ -622,6 +622,7 @@ func newWithNotifications(s *repo.Store, e *engine.Engine, syncSvc *tracker.Serv
 	// login. Public install assets are read-only; daemon APIs authenticate with
 	// one-time bind codes or runner session tokens instead of a user identity.
 	g.GET("/runners/install.sh", serveBindCLIScript)
+	g.GET("/runners/install.ps1", serveBindPowerShellScript)
 	g.GET("/runners/agentflow-runner", serveRunnerBinary)
 	g.GET("/runners/agentflow-gate-mcp", serveGateMCPBinary)
 	g.GET("/runners/health", api.health)
@@ -697,6 +698,18 @@ func serveBindCLIScript(c *gin.Context) {
 		return
 	}
 	c.Header("Content-Type", "text/x-shellscript; charset=utf-8")
+	c.Header("Cache-Control", "no-store")
+	_, _ = c.Writer.Write(script)
+}
+
+// serveBindPowerShellScript serves the native Windows runner installer.
+func serveBindPowerShellScript(c *gin.Context) {
+	script := deployassets.BindCLIPowerShellScript()
+	if len(script) == 0 {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Content-Type", "text/plain; charset=utf-8")
 	c.Header("Cache-Control", "no-store")
 	_, _ = c.Writer.Write(script)
 }

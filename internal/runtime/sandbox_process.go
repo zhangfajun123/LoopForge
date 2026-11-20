@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"agentflow/internal/domain"
 )
@@ -196,13 +195,7 @@ func (s *processSandbox) command(ctx context.Context, command CommandSpec, base 
 	if command.OwnProcessGroup {
 		// A conversation CLI is stopped with its whole process group; bwrap's
 		// own PID namespace then takes every descendant down with it.
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		cmd.Cancel = func() error {
-			if cmd.Process == nil {
-				return nil
-			}
-			return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
+		ConfigureProcessTree(cmd)
 	}
 	switch s.driver {
 	case "seatbelt":

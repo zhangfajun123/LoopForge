@@ -22,8 +22,8 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 # Ref updates must not invalidate the Go build cache.
 COPY --exclude=.git . .
 # Helpers do not embed the web UI, so they compile while the chatbot stage builds.
-# The runner and gate binaries are built for every OS/arch regardless; GOOS and
-# GOARCH pick the architecture of the binaries that run inside this image.
+# The runner and gate binaries are cross-built for the supported execution
+# hosts; GOOS and GOARCH pick the architecture that runs inside this image.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build GOOS=${TARGETOS} GOARCH=${TARGETARCH} bash scripts/build-binaries.sh --helpers /out
 COPY --from=chatbot /src/web/native-chat/ web/native-chat/
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build GOOS=${TARGETOS} GOARCH=${TARGETARCH} bash scripts/build-binaries.sh --platform /out

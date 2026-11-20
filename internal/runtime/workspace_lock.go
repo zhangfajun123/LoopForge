@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 )
 
@@ -31,12 +30,12 @@ func (m *Manager) acquireLock(ctx context.Context, id string) (*os.File, error) 
 
 func flockExclusive(ctx context.Context, f *os.File) error {
 	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return nil
-		}
-		if err != syscall.EWOULDBLOCK && err != syscall.EAGAIN {
+		locked, err := tryFileLock(f)
+		if err != nil {
 			return err
+		}
+		if locked {
+			return nil
 		}
 		select {
 		case <-ctx.Done():
@@ -50,7 +49,7 @@ func unlockFile(f *os.File) error {
 	if f == nil {
 		return nil
 	}
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_ = unlockFileLock(f)
 	return f.Close()
 }
 
@@ -64,10 +63,13 @@ func (m *Manager) workspaceInUse(name string) bool {
 		return false
 	}
 	defer f.Close()
-	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-	if err != nil {
+	locked, lockErr := tryFileLock(f)
+	if lockErr != nil {
 		return true
 	}
-	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	if !locked {
+		return true
+	}
+	_ = unlockFileLock(f)
 	return false
 }

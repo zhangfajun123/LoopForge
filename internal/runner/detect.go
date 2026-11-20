@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"sort"
@@ -13,6 +12,7 @@ import (
 
 	"agentflow/internal/domain"
 	"agentflow/internal/managedcli"
+	flowruntime "agentflow/internal/runtime"
 )
 
 // providerSpec maps a platform executor kind to the local CLI binary the
@@ -90,13 +90,13 @@ func extraSearchPaths() []string {
 // lookupCLI resolves a binary name against PATH first, then the common
 // user-local installation directories.
 func lookupCLI(binary string) (string, bool) {
-	if path, err := exec.LookPath(binary); err == nil && strings.TrimSpace(path) != "" {
+	if path, err := flowruntime.LookPath(binary); err == nil && strings.TrimSpace(path) != "" {
 		return path, true
 	}
 	for _, dir := range extraSearchPaths() {
 		candidate := filepath.Join(dir, binary)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return candidate, true
+		if path, err := flowruntime.LookPath(candidate); err == nil && strings.TrimSpace(path) != "" {
+			return path, true
 		}
 	}
 	return "", false
@@ -200,7 +200,8 @@ func builtinRuntimes() []domain.RunnerRuntime {
 func probeVersion(ctx context.Context, path string, flags []string, environments ...map[string]string) string {
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(probeCtx, path, append(append([]string{}, flags...), "--version")...)
+	args := append(append([]string{path}, flags...), "--version")
+	cmd := flowruntime.NewCommandContext(probeCtx, args...)
 	if len(environments) > 0 && len(environments[0]) > 0 {
 		cmd.Env = os.Environ()
 		for key, value := range environments[0] {

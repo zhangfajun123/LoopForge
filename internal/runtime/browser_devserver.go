@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"agentflow/internal/domain"
@@ -220,7 +219,8 @@ func forgetDevServerEndpoint(runID string, endpoint browserEndpoint) {
 // not reach the sandbox at all: only refusals (and a loopback family the
 // sandbox lacks) mean the dev server is not up.
 func devServerRefused(err error) bool {
-	if errors.Is(err, syscall.ECONNREFUSED) {
+	message := strings.ToUpper(err.Error())
+	if strings.Contains(message, "ECONNREFUSED") || strings.Contains(message, "CONNECTION REFUSED") {
 		return true
 	}
 	refused := false

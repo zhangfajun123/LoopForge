@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"agentflow/internal/gitwork"
@@ -172,7 +171,15 @@ func cliShimMain(args []string) int {
 			env = cliShimEnv(name, host, reply.Password, env)
 		}
 	}
-	if err := syscall.Exec(real, append([]string{name}, rest...), env); err != nil {
+	cmd := exec.Command(real, rest...)
+	cmd.Args[0] = name
+	cmd.Env = env
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode()
+		}
 		fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
 		return 126
 	}
@@ -187,9 +194,11 @@ func lookPathSkipping(name, skip, path string) (string, error) {
 		if dir == "" || filepath.Clean(dir) == skip {
 			continue
 		}
-		candidate := filepath.Join(dir, name)
-		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
-			return candidate, nil
+		for _, file := range pathNameCandidates(name) {
+			candidate := filepath.Join(dir, file)
+			if info, err := os.Stat(candidate); err == nil && executableFile(info) {
+				return candidate, nil
+			}
 		}
 	}
 	return "", exec.ErrNotFound

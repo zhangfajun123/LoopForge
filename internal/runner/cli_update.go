@@ -4,19 +4,19 @@ import (
 	"context"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"agentflow/internal/domain"
+	flowruntime "agentflow/internal/runtime"
 )
 
 func cliListsUpdate(ctx context.Context, binary, subcommand string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "--help")
+	cmd := flowruntime.NewCommandContext(ctx, binary, "--help")
 	cmd.Env, cmd.Dir, cmd.WaitDelay = cliUpdateEnvironment(binary), os.TempDir(), time.Second
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -92,7 +92,7 @@ func (d *Daemon) applyNativeCLIUpdate(ctx context.Context, rt domain.RunnerRunti
 		return domain.RunnerMaintenanceResult{Status: "failed", Message: "无法创建 CLI 更新目录"}
 	}
 	defer os.RemoveAll(dir)
-	cmd := exec.CommandContext(ctx, rt.BinaryPath, spec.Update)
+	cmd := flowruntime.NewCommandContext(ctx, rt.BinaryPath, spec.Update)
 	cmd.Env, cmd.Dir, cmd.WaitDelay = cliUpdateEnvironment(rt.BinaryPath), dir, time.Second
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == nil && cliUpdateRequiresManual(string(out)) {

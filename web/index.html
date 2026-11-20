@@ -789,7 +789,7 @@
           <details class="runner-uninstall">
             <summary>卸载执行器</summary>
             <div class="runner-command-box compact">
-              <pre class="mono">(curl -fsSL --connect-timeout 5 <span id="uninstallHttpsOrigin">https://</span>/runners/install.sh || curl -fsSL <span id="uninstallHttpOrigin">http://</span>/runners/install.sh) | bash -s -- --uninstall</pre>
+              <pre id="uninstallCliCommand" class="mono">(curl -fsSL --connect-timeout 5 <span id="uninstallHttpsOrigin">https://</span>/runners/install.sh || curl -fsSL <span id="uninstallHttpOrigin">http://</span>/runners/install.sh) | bash -s -- --uninstall</pre>
               <button id="copyUninstallCommand" class="button ghost small" type="button">复制</button>
             </div>
           </details>

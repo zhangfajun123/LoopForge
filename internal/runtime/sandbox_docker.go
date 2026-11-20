@@ -707,14 +707,15 @@ func (s *dockerSandbox) start(ctx context.Context, recreate bool) error {
 	// Native installs own private (0700) workspaces as the service user.
 	// A root image without DAC capabilities cannot access another UID's bind.
 	// Run default/root images as that user; retain explicit non-root image users.
-	if os.Geteuid() != 0 {
+	uid, gid, setUser := dockerHostIdentity()
+	if setUser {
 		configured, err := exec.CommandContext(ctx, "docker", "image", "inspect", "--format", "{{.Config.User}}", image).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("inspect sandbox image user: %w: %s", err, strings.TrimSpace(string(configured)))
 		}
 		user, _, _ := strings.Cut(strings.TrimSpace(string(configured)), ":")
 		if user == "" || user == "root" || user == "0" {
-			args = append(args, "--user", fmt.Sprintf("%d:%d", os.Geteuid(), os.Getegid()))
+			args = append(args, "--user", fmt.Sprintf("%d:%d", uid, gid))
 		}
 	}
 	network := strings.TrimSpace(os.Getenv("AGENTFLOW_DOCKER_NETWORK"))

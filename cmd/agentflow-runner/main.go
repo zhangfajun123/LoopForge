@@ -7,9 +7,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	goruntime "runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"agentflow/internal/runner"
@@ -35,7 +35,7 @@ func main() {
 	concurrency := flag.Int("concurrency", 1, "maximum concurrent tasks")
 	heartbeat := flag.Duration("heartbeat", 30*time.Second, "heartbeat interval")
 	longPoll := flag.Duration("long-poll", 35*time.Second, "client-side long-poll timeout; must exceed the server's")
-	autoUpdate := flag.Bool("auto-update", true, "check for platform updates before claiming queued work")
+	autoUpdate := flag.Bool("auto-update", goruntime.GOOS != "windows", "check for platform updates before claiming queued work")
 	labels := flag.String("labels", "", "comma-separated runner labels")
 	reuseSandbox := flag.Bool("reuse-run-sandbox", true, "run all nodes of a run in one sandbox per definition instead of one per task")
 	flag.Parse()
@@ -63,7 +63,7 @@ func main() {
 	}
 	log.Printf("agentflow-runner %s connecting to %s (concurrency=%d)", runner.Version(), cfg.ServerURL, cfg.MaxConcurrency)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), runnerSignals()...)
 	defer stop()
 	if err := daemon.Run(ctx); errors.Is(err, runner.ErrUpdateReady) {
 		binary, exeErr := os.Executable()
@@ -71,9 +71,10 @@ func main() {
 			log.Fatal("locate updated runner: ", exeErr)
 		}
 		log.Printf("restarting updated runner")
-		if exeErr := syscall.Exec(binary, os.Args, os.Environ()); exeErr != nil {
+		if exeErr := restartUpdatedRunner(binary); exeErr != nil {
 			log.Fatal("restart updated runner: ", exeErr)
 		}
+		return
 	} else if err != nil {
 		log.Fatal(err)
 	}

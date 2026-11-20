@@ -24,6 +24,9 @@ var ErrUpdateReady = errors.New("runner update ready")
 const maxRunnerBinarySize = 512 << 20
 
 func (d *Daemon) checkUpdatesBeforeClaim(ctx context.Context) {
+	if runtime.GOOS == "windows" {
+		return
+	}
 	if err := d.checkGateMCPUpdates(ctx); err != nil && ctx.Err() == nil {
 		log.Printf("gate MCP update: %v", err)
 	}
@@ -143,6 +146,9 @@ func (d *Daemon) runnerExecutionActive() bool {
 // Download and verify outside the claim fence. Idle activity is checked
 // again before replacing the binary, with new workspace requests excluded.
 func (d *Daemon) installRunnerUpdate(ctx context.Context, binary string) (bool, error) {
+	if runtime.GOOS == "windows" {
+		return false, errors.New("Windows Runner updates must be installed after stopping the process")
+	}
 	if d.runnerWorkActive() || !d.updateDownloadMu.TryLock() {
 		return false, errRunnerUpdateBusy
 	}

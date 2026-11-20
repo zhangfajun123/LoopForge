@@ -472,9 +472,10 @@ type RunnerInvocation struct {
 	// paths resolved by the control plane. RecoverOutputs lets the runner
 	// move a missing output file found elsewhere in the workspace into
 	// place, as the control plane does for its own sandboxes.
-	ReportOutputs  bool     `json:"reportOutputs,omitempty"`
-	OutputFiles    []string `json:"outputFiles,omitempty"`
-	RecoverOutputs bool     `json:"recoverOutputs,omitempty"`
+	ReportOutputs    bool              `json:"reportOutputs,omitempty"`
+	OutputFiles      []string          `json:"outputFiles,omitempty"`
+	OutputMediaTypes map[string]string `json:"outputMediaTypes,omitempty"`
+	RecoverOutputs   bool              `json:"recoverOutputs,omitempty"`
 	// LargeArtifacts asks the runner to stream oversized output files to the
 	// control-plane artifact upload endpoint instead of inlining them. When
 	// false the legacy 1MB cap stays in force.
@@ -573,14 +574,15 @@ func (inv *RunnerInvocation) GitSSHRemotes() []string {
 }
 
 // RunnerInputFile is one file written into the task workspace before a run.
-// Small inputs carry Content inline; large object-store artifacts carry a
-// short-lived URL and their SHA-256 instead so the JSON payload stays small.
+// Small inputs carry Content inline; large object-store artifacts carry a key
+// that the runner resolves to a short-lived URL when it starts the task.
 type RunnerInputFile struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
-	URL     string `json:"url,omitempty"`
-	SHA256  string `json:"sha256,omitempty"`
-	Size    int64  `json:"size,omitempty"`
+	Path       string `json:"path"`
+	Content    string `json:"content"`
+	StorageKey string `json:"storageKey,omitempty"`
+	URL        string `json:"url,omitempty"`
+	SHA256     string `json:"sha256,omitempty"`
+	Size       int64  `json:"size,omitempty"`
 }
 
 // ArtifactUpload is where the control plane stored an oversized artifact the

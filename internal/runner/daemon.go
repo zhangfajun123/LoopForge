@@ -747,6 +747,12 @@ func (d *Daemon) taskWorkspace(task domain.RunnerTask) string {
 	return filepath.Join(d.cfg.DefaultWorkspaceRoot, filepath.FromSlash(ws))
 }
 
+func (d *Daemon) prepareInvocationWorkspace(ctx context.Context, task domain.RunnerTask, workspace string) error {
+	return prepareInvocationWorkspaceWithResolver(ctx, workspace, task.Invocation, func(ctx context.Context, rel string) (string, error) {
+		return d.client.ArtifactDownloadURL(ctx, task.ID, rel)
+	})
+}
+
 // executeTerminal runs a command task (`sh -lc <command>`) in the task
 // workspace. This is the remote-terminal capability used by workflow scripts
 // and verification gates.
@@ -762,7 +768,7 @@ func (d *Daemon) executeTerminal(ctx context.Context, task domain.RunnerTask) ex
 		if err := writeRunnerHumanContext(workspace, task.Invocation.HumanContext); err != nil {
 			return execResult{status: domain.RunnerTaskFailed, errMsg: fmt.Sprintf("write human context: %v", err)}
 		}
-		if err := prepareInvocationWorkspace(workspace, task.Invocation); err != nil {
+		if err := d.prepareInvocationWorkspace(ctx, task, workspace); err != nil {
 			return execResult{status: domain.RunnerTaskFailed, errMsg: err.Error()}
 		}
 	}
@@ -842,7 +848,7 @@ func (d *Daemon) executeInvocation(ctx context.Context, task domain.RunnerTask) 
 	if err := writeRunnerHumanContext(workspace, inv.HumanContext); err != nil {
 		return execResult{status: domain.RunnerTaskFailed, errMsg: fmt.Sprintf("write human context: %v", err)}, nil
 	}
-	if err := prepareInvocationWorkspace(workspace, inv); err != nil {
+	if err := d.prepareInvocationWorkspace(ctx, task, workspace); err != nil {
 		return execResult{status: domain.RunnerTaskFailed, errMsg: err.Error()}, nil
 	}
 	driver := "runner"

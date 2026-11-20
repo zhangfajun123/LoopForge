@@ -21,7 +21,7 @@ type fakeBlobStore struct {
 
 func (f *fakeBlobStore) Enabled() bool { return true }
 
-func (f *fakeBlobStore) Put(_ context.Context, key string, src io.Reader, size int64) error {
+func (f *fakeBlobStore) Put(_ context.Context, key string, src io.Reader, size int64, _ string) error {
 	if f.objects == nil {
 		f.objects = map[string][]byte{}
 	}

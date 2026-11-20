@@ -330,6 +330,23 @@ func (c *Client) UploadArtifact(ctx context.Context, taskID, rel string, body io
 	return out, nil
 }
 
+// ArtifactDownloadURL asks the control plane for a fresh URL for one declared
+// OBS input. The runner calls this after claiming the task, avoiding URLs that
+// expire while a task waits in the queue.
+func (c *Client) ArtifactDownloadURL(ctx context.Context, taskID, rel string) (string, error) {
+	var out struct {
+		URL string `json:"url"`
+	}
+	path := "/runners/tasks/" + taskID + "/artifacts/input?path=" + url.QueryEscape(rel)
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(out.URL) == "" {
+		return "", fmt.Errorf("control plane returned an empty artifact URL")
+	}
+	return out.URL, nil
+}
+
 func (c *Client) UploadPreview(ctx context.Context, previewID, token string, body io.Reader) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base+"/runners/previews/"+previewID+"/content", body)
 	if err != nil {

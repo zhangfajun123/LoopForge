@@ -240,6 +240,7 @@ func (e *Engine) dispatchRunnerTask(ctx context.Context, runnerID string, run do
 		invocation.ReportOutputs = true
 		invocation.Inputs = reported.inputs
 		invocation.OutputFiles = artifactOutputFiles(run, node)
+		invocation.OutputMediaTypes = artifactOutputMediaTypes(run, node)
 		if path := strings.TrimSpace(options.GateResultPath); path != "" {
 			invocation.OutputFiles = append(invocation.OutputFiles, path)
 		}
@@ -416,6 +417,7 @@ func (e *Engine) dispatchRunnerScript(ctx context.Context, runnerID string, run 
 				invocation.OutputFiles = append(invocation.OutputFiles, rel)
 			}
 		}
+		invocation.OutputMediaTypes = artifactContractMediaTypes(artifacts, []string{artifactDirectory})
 		invocation.RecoverOutputs = strings.TrimSpace(artifactDirectory) == ""
 		invocation.LargeArtifacts = e.largeArtifactsEnabled()
 	}

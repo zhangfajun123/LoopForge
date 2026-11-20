@@ -559,7 +559,7 @@ func storeLargeArtifact(outputs nodeOutputs, runID, nodeID string, attempt int, 
 	key := obsstore.ArtifactKey(runID, nodeID, attempt, rel)
 	digest := sha256.New()
 	body := io.TeeReader(reader, digest)
-	if err := blobs.Put(context.Background(), key, body, size); err != nil {
+	if err := blobs.Put(context.Background(), key, body, size, mediaType); err != nil {
 		_ = blobs.Delete(context.Background(), key)
 		return domain.Artifact{}, fmt.Errorf("upload %s to OBS: %w", name, err)
 	}

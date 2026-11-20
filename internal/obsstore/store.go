@@ -52,7 +52,7 @@ func LoadConfig() Config {
 // configured and callers keep the legacy inline behavior.
 type BlobStore interface {
 	Enabled() bool
-	Put(ctx context.Context, key string, src io.Reader, size int64) error
+	Put(ctx context.Context, key string, src io.Reader, size int64, contentType string) error
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 	Delete(ctx context.Context, key string) error
 	PresignGet(ctx context.Context, key string, ttl time.Duration) (string, error)
@@ -87,7 +87,7 @@ type store struct {
 
 func (s *store) Enabled() bool { return s != nil && s.client != nil }
 
-func (s *store) Put(ctx context.Context, key string, src io.Reader, size int64) error {
+func (s *store) Put(ctx context.Context, key string, src io.Reader, size int64, contentType string) error {
 	if !s.Enabled() {
 		return ErrDisabled
 	}
@@ -95,6 +95,7 @@ func (s *store) Put(ctx context.Context, key string, src io.Reader, size int64) 
 		PutObjectBasicInput: obs.PutObjectBasicInput{
 			ObjectOperationInput: obs.ObjectOperationInput{Bucket: s.bucket, Key: key},
 			ContentLength:        size,
+			ContentType:          contentType,
 		},
 		Body: src,
 	})

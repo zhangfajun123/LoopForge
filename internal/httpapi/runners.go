@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	stdsync "sync"
@@ -1249,11 +1251,70 @@ func (h *runnersHandlers) runnerTaskArtifactUpload(c *gin.Context) {
 	key := obsstore.ArtifactKey(task.RunID, task.NodeID, task.Attempt, rel)
 	digest := sha256.New()
 	body := io.TeeReader(c.Request.Body, digest)
-	if err := h.blobs.Put(c.Request.Context(), key, body, size); err != nil {
+	contentType := ""
+	if task.Invocation != nil {
+		contentType = strings.TrimSpace(task.Invocation.OutputMediaTypes[rel])
+	}
+	if _, _, err := mime.ParseMediaType(contentType); err != nil {
+		contentType = mime.TypeByExtension(filepath.Ext(rel))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	if err := h.blobs.Put(c.Request.Context(), key, body, size, contentType); err != nil {
 		c.JSON(http.StatusBadGateway, map[string]string{"error": "artifact upload failed"})
 		return
 	}
 	c.JSON(http.StatusOK, domain.ArtifactUpload{StorageKey: key, SHA256: hex.EncodeToString(digest.Sum(nil)), Size: size})
+}
+
+// runnerTaskArtifactInputURL returns a fresh URL only for an OBS input that
+// was explicitly attached to this runner task.
+func (h *runnersHandlers) runnerTaskArtifactInputURL(c *gin.Context) {
+	runner, ok := h.runnerSessionAuth(c)
+	if !ok {
+		return
+	}
+	task, exists := h.repo.RunnerTask(c.Param("id"))
+	if !exists {
+		c.JSON(http.StatusNotFound, map[string]string{"error": "task not found"})
+		return
+	}
+	if task.LeaseOwner != runner.ID || (task.Status != domain.RunnerTaskLeased && task.Status != domain.RunnerTaskRunning) {
+		c.JSON(http.StatusConflict, map[string]string{"error": repo.ErrRunnerTaskLeaseLost.Error()})
+		return
+	}
+	if task.Invocation == nil || !task.Invocation.LargeArtifacts {
+		c.JSON(http.StatusForbidden, map[string]string{"error": "large artifact download is not enabled for this task"})
+		return
+	}
+	if h.blobs == nil || !h.blobs.Enabled() {
+		c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "artifact storage is unavailable"})
+		return
+	}
+	rel := strings.TrimSpace(c.Query("path"))
+	if !domain.SafeWorkspaceRelPath(rel) {
+		c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifact path"})
+		return
+	}
+	var key string
+	for _, input := range task.Invocation.Inputs {
+		if input.Path == rel && strings.TrimSpace(input.StorageKey) != "" {
+			key = input.StorageKey
+			break
+		}
+	}
+	if key == "" {
+		c.JSON(http.StatusNotFound, map[string]string{"error": "artifact input not found"})
+		return
+	}
+	url, err := h.blobs.PresignGet(c.Request.Context(), key, 5*time.Minute)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, map[string]string{"error": "artifact download is temporarily unavailable"})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, map[string]string{"url": url})
 }
 
 // runnerTaskControl lets the runner poll the desired state while running.
@@ -1360,7 +1421,7 @@ func isRunnerAgentPath(path string) bool {
 			return true
 		}
 		switch strings.Join(parts[1:], "/") {
-		case "start", "lease/renew", "events", "complete", "control", "artifacts":
+		case "start", "lease/renew", "events", "complete", "control", "artifacts", "artifacts/input":
 			return true
 		}
 	}

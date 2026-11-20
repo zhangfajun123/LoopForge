@@ -503,7 +503,7 @@ func (e *Engine) executeNode(ctx context.Context, runID string, wf domain.Workfl
 	artifactContext := ""
 	if runner, ok := e.repo.Runner(e.defaultExecutionRunner(current)); ok && runner.SupportsReportedOutputs() {
 		var inputs []domain.RunnerInputFile
-		artifactContext, inputs = runnerArtifactInputsWithBlobs(wf, node, current, e.blobs)
+		artifactContext, inputs = runnerArtifactInputs(wf, node, current)
 		reported = sb.beginReportedOutputs(node.ID, inputs)
 		defer sb.endReportedOutputs(node.ID)
 	} else {

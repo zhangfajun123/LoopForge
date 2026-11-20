@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"errors"
 	"io"
 	"io/fs"
@@ -10,10 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"agentflow/internal/domain"
-	"agentflow/internal/obsstore"
 )
 
 var (
@@ -212,15 +209,41 @@ func artifactOutputFiles(run domain.Run, node domain.WorkflowNode) []string {
 	return out
 }
 
+func artifactOutputMediaTypes(run domain.Run, node domain.WorkflowNode) map[string]string {
+	targets := []domain.RepositoryContext{{}}
+	if normalizeExecutionScope(node.ExecutionScope) == domain.ExecutionScopeRepositories {
+		targets = run.RepositoryContexts()
+	}
+	dirs := make([]string, 0, len(targets))
+	for _, target := range targets {
+		dirs = append(dirs, target.WorkspaceDir)
+	}
+	return artifactContractMediaTypes(node.ArtifactOutputs, dirs)
+}
+
+func artifactContractMediaTypes(contracts []domain.ArtifactContract, repositoryDirs []string) map[string]string {
+	mediaTypes := make(map[string]string)
+	for _, dir := range repositoryDirs {
+		for _, contract := range contracts {
+			rel, ok := artifactRelPath(dir, contract.Path)
+			if !ok {
+				continue
+			}
+			mediaType := strings.TrimSpace(contract.MediaType)
+			if mediaType == "" {
+				mediaType = "text/markdown"
+			}
+			mediaTypes[rel] = mediaType
+		}
+	}
+	return mediaTypes
+}
+
 // runnerArtifactInputs is materializeInputs for an execution machine: the
 // same selection and prompt manifest, returned as files for the runner to
 // write instead of being written into a control-plane workspace. Repository
 // patches are never applied; the runner's checkout is the source of truth.
 func runnerArtifactInputs(wf domain.WorkflowDefinition, node domain.WorkflowNode, run domain.Run) (string, []domain.RunnerInputFile) {
-	return runnerArtifactInputsWithBlobs(wf, node, run, nil)
-}
-
-func runnerArtifactInputsWithBlobs(wf domain.WorkflowDefinition, node domain.WorkflowNode, run domain.Run, blobs obsstore.BlobStore) (string, []domain.RunnerInputFile) {
 	sources := map[string]bool{}
 	for _, edge := range wf.Edges {
 		if edge.Target == node.ID {
@@ -241,13 +264,9 @@ func runnerArtifactInputsWithBlobs(wf domain.WorkflowDefinition, node domain.Wor
 		input := domain.RunnerInputFile{Path: rel, Content: artifact.Content}
 		if artifact.StorageBackend == "obs" {
 			input.Content = ""
+			input.StorageKey = artifact.StorageKey
 			input.SHA256 = artifact.SHA256
 			input.Size = artifact.Size
-			if blobs != nil && blobs.Enabled() {
-				if url, err := blobs.PresignGet(context.Background(), artifact.StorageKey, 5*time.Minute); err == nil {
-					input.URL = url
-				}
-			}
 		}
 		files = append(files, input)
 		writeInputManifestEntry(&manifest, artifact, rel)
